@@ -16,7 +16,7 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     features: [
       'syncs every hour (good enough for groceries)',
       'todoist → alexa happens instantly via webhooks',
-      'email me at justin@jmitch.com if something breaks',
+      'report issues on GitHub if something breaks',
     ],
   },
   fast: {

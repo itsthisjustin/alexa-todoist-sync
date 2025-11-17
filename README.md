@@ -6,7 +6,7 @@
 
 This project supports multiple deployment options. Choose the one that fits your needs:
 
-### ⚡ [Cloudflare Workers](./cloudflare/README.md) ⭐ **RECOMMENDED**
+### ⚡ Cloudflare Workers ⭐ **RECOMMENDED**
 Serverless, fully-managed solution with Todoist OAuth webhooks for instant syncing.
 
 **Best for:** Anyone who wants a fully-automated, maintenance-free solution
@@ -19,11 +19,11 @@ Serverless, fully-managed solution with Todoist OAuth webhooks for instant synci
 - ✅ **Scalable** - handles thousands of users automatically
 - ✅ **Always on** - 24/7 operation with zero maintenance
 
-[📖 Cloudflare Deployment Guide →](./cloudflare/README.md)
+**Note:** Cloudflare deployment documentation is available in the `cloudflare/` directory. Check the code and configuration files for setup instructions.
 
 ---
 
-### 📱 [macOS](./mac/README.md) ✅ **TESTED**
+### 📱 macOS ✅ **TESTED**
 Run locally on your Mac with LaunchDaemon for automatic syncing.
 
 **Status:** Tested and works great! Requires an always-on Mac to function.
@@ -32,11 +32,16 @@ Run locally on your Mac with LaunchDaemon for automatic syncing.
 
 **Note:** Uses polling (checks Todoist every 24 hours by default) instead of webhooks.
 
-[📖 macOS Installation Guide →](./mac/README.md)
+**Installation:**
+```bash
+cd mac
+./install.sh
+```
+The script will install dependencies, help configure credentials, and set up a LaunchDaemon for automatic syncing.
 
 ---
 
-### 💻 [Windows](./windows/README.md) ⚠️ **UNTESTED**
+### 💻 Windows ⚠️ **UNTESTED**
 Run locally on Windows with Task Scheduler for automatic syncing.
 
 **Status:** Completely untested. PRs welcome!
@@ -45,11 +50,16 @@ Run locally on Windows with Task Scheduler for automatic syncing.
 
 **Note:** Uses polling (checks Todoist every 24 hours by default) instead of webhooks.
 
-[📖 Windows Installation Guide →](./windows/README.md)
+**Installation:**
+```powershell
+cd windows
+.\install.ps1
+```
+Run as Administrator. The script will install dependencies, help configure credentials, and set up a Scheduled Task for automatic syncing.
 
 ---
 
-### ☁️ [Cloud / EC2](./cloud/README.md) ⚠️ **UNTESTED**
+### ☁️ Cloud / EC2 ⚠️ **UNTESTED**
 Run on a cloud server (AWS EC2, DigitalOcean, etc.) for 24/7 operation.
 
 **Status:** Completely untested. PRs welcome!
@@ -58,7 +68,12 @@ Run on a cloud server (AWS EC2, DigitalOcean, etc.) for 24/7 operation.
 
 **Note:** Uses polling (checks Todoist every 24 hours by default) instead of webhooks.
 
-[📖 Cloud Installation Guide →](./cloud/README.md)
+**Installation:**
+```bash
+cd cloud
+sudo ./install.sh
+```
+Supports Ubuntu, Debian, Amazon Linux, RHEL, and CentOS. The script will install Node.js, Chrome/Chromium, dependencies, help configure credentials, and set up a systemd service for automatic syncing.
 
 ---
 
@@ -148,7 +163,7 @@ The easiest way to get started is with the Cloudflare Workers deployment:
       wrangler pages deploy frontend
       ```
 
-**📖 Full guide:** [Cloudflare Deployment Guide](./cloudflare/README.md)
+**Note:** Check the `cloudflare/` directory for configuration templates and code.
 
 ### Other Platforms
 
@@ -204,8 +219,8 @@ Alexa Shopping List  ──────→  Todoist Project
 
 1. Open Todoist in your browser
 2. Click on the project you want to use
-3. Look at the URL: `https://todoist.com/app/project/2275365528`
-4. The number at the end (`2275365528`) is your project ID
+3. Look at the URL: `https://todoist.com/app/project/1234567890`
+4. The number at the end (`1234567890`) is your project ID
 
 ## ⚙️ Configuration
 
@@ -251,12 +266,12 @@ alexa-todoist-sync/
 │   ├── wrangler.toml.example  # Cloudflare configuration template
 │   └── package.json       # Dependencies
 ├── mac/                   # macOS-specific files (tested)
-│   ├── README.md          # macOS installation guide
 │   ├── install.sh         # macOS installation script
 │   └── com.alexassync.plist  # LaunchDaemon configuration
 ├── windows/               # Windows-specific files (untested)
-│   ├── README.md          # Windows installation guide
 │   └── install.ps1        # Windows installation script
+├── cloud/                 # Cloud/EC2 deployment files (untested)
+│   └── install.sh         # Linux installation script
 ├── shared/                # Shared files for local deployments
 │   ├── sync.js            # Main sync script
 │   └── config.json.template  # Configuration template
