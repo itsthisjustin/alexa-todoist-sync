@@ -1,0 +1,16 @@
+{
+  "amazon": {
+    "email": "your-amazon-email@example.com",
+    "password": "your-amazon-password"
+  },
+  "todoist": {
+    "apiToken": "your-todoist-api-token",
+    "projectId": "your-project-id"
+  },
+  "options": {
+    "headless": true,
+    "checkIntervalMinutes": 5,
+    "todoistCheckIntervalHours": 24,
+    "stateFile": "sync-state.json"
+  }
+}
