@@ -230,6 +230,182 @@ app.post('/api/config/amazon', async (c) => {
   }
 });
 
+/**
+ * Disconnect Todoist
+ */
+app.delete('/api/config/todoist', async (c) => {
+  const token = extractToken(c.req.raw);
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const payload = await verifyToken(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const configData = await c.env.USERS.get(`config:${payload.userId}`);
+    if (!configData) {
+      return c.json({ error: 'Config not found' }, 404);
+    }
+
+    const config: UserConfig = JSON.parse(configData);
+
+    // Remove Todoist configuration
+    delete config.todoist;
+
+    // If no Amazon session either, mark as inactive
+    if (!config.amazonSession) {
+      config.isActive = false;
+    }
+
+    await c.env.USERS.put(`config:${payload.userId}`, JSON.stringify(config));
+
+    return c.json({ success: true });
+  } catch (error: any) {
+    console.error('Todoist disconnect error:', error);
+    return c.json({ error: 'Failed to disconnect Todoist' }, 500);
+  }
+});
+
+/**
+ * Disconnect Amazon
+ */
+app.delete('/api/config/amazon', async (c) => {
+  const token = extractToken(c.req.raw);
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const payload = await verifyToken(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const configData = await c.env.USERS.get(`config:${payload.userId}`);
+    if (!configData) {
+      return c.json({ error: 'Config not found' }, 404);
+    }
+
+    const config: UserConfig = JSON.parse(configData);
+
+    // Remove Amazon session from config
+    delete config.amazonSession;
+
+    // Delete encrypted session from SESSIONS KV
+    await c.env.SESSIONS.delete(`amazon:${payload.userId}`);
+
+    // If no Todoist either, mark as inactive
+    if (!config.todoist) {
+      config.isActive = false;
+    }
+
+    await c.env.USERS.put(`config:${payload.userId}`, JSON.stringify(config));
+
+    return c.json({ success: true });
+  } catch (error: any) {
+    console.error('Amazon disconnect error:', error);
+    return c.json({ error: 'Failed to disconnect Amazon' }, 500);
+  }
+});
+
+/**
+ * Delete Account
+ * Permanently deletes user account and all associated data
+ */
+app.delete('/api/account', async (c) => {
+  const token = extractToken(c.req.raw);
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const payload = await verifyToken(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    // Get user email before deleting
+    const userData = await c.env.USERS.get(`user:${payload.userId}`);
+    if (!userData) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    const user: User = JSON.parse(userData);
+
+    // Delete all user data
+    await Promise.all([
+      // Delete user record
+      c.env.USERS.delete(`user:${payload.userId}`),
+      // Delete email mapping
+      c.env.USERS.delete(`email:${user.email}`),
+      // Delete config
+      c.env.USERS.delete(`config:${payload.userId}`),
+      // Delete Amazon session
+      c.env.SESSIONS.delete(`amazon:${payload.userId}`),
+    ]);
+
+    console.log(`Deleted account for user ${payload.userId} (${user.email})`);
+
+    return c.json({ success: true, message: 'Account deleted successfully' });
+  } catch (error: any) {
+    console.error('Account deletion error:', error);
+    return c.json({ error: 'Failed to delete account' }, 500);
+  }
+});
+
+/**
+ * Manual Sync - Trigger immediate sync
+ */
+app.post('/api/sync/manual', async (c) => {
+  const token = extractToken(c.req.raw);
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const payload = await verifyToken(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  try {
+    const configData = await c.env.USERS.get(`config:${payload.userId}`);
+    if (!configData) {
+      return c.json({ error: 'Config not found' }, 404);
+    }
+
+    const config: UserConfig = JSON.parse(configData);
+
+    // Check if user has both services connected
+    if (!config.amazonSession) {
+      return c.json({ error: 'Amazon not connected' }, 400);
+    }
+
+    if (!config.todoist) {
+      return c.json({ error: 'Todoist not connected' }, 400);
+    }
+
+    if (!config.isActive) {
+      return c.json({ error: 'Sync is not active. Please connect both Amazon and Todoist.' }, 400);
+    }
+
+    // Enqueue immediate Alexa → Todoist sync
+    await c.env.SYNC_QUEUE.send({
+      userId: payload.userId,
+      jobType: 'alexa-to-todoist',
+    } as SyncJob);
+
+    console.log(`Manual sync triggered for user ${payload.userId}`);
+
+    return c.json({ success: true, message: 'Sync started. This may take 30-60 seconds.' });
+  } catch (error: any) {
+    console.error('Manual sync error:', error);
+    return c.json({ error: 'Failed to start sync' }, 500);
+  }
+});
+
 // ==================== INTERVALS & PRICING ====================
 
 /**

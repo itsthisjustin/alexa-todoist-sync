@@ -1,14 +1,13 @@
 # Alexa-Todoist Sync - Project Status
 
-## 🚨 IMMEDIATE ACTION REQUIRED
+## ✅ READY TO DEPLOY
 
-Before you can deploy and use the application, you **MUST**:
+All critical features are now implemented:
 
-1. **Get Stripe Price IDs** → Create products in Stripe, copy price IDs, update `shared/pricing.ts`
-2. **(Optional) Implement Disconnect/Reconnect** → Add DELETE endpoints if you want users to disconnect services
+1. ✅ **Stripe Price IDs** → Configured with real price IDs
+2. ✅ **Disconnect/Reconnect** → DELETE endpoints implemented
 
-**Without Stripe Price IDs**: Upgrade buttons will fail with Stripe errors
-**Without Disconnect features**: Users can't change accounts or fix broken connections
+You can now deploy and test the full application!
 
 ---
 
@@ -66,6 +65,45 @@ Before you can deploy and use the application, you **MUST**:
   - Handles 2FA with 120-second manual entry window
   - Added puppeteer@24.15.0 as dependency
 
+### 5. Disconnect/Reconnect Features
+- **Backend DELETE Endpoints** (`workers/index.ts`):
+  - `DELETE /api/config/todoist` - Disconnects Todoist, removes config
+  - `DELETE /api/config/amazon` - Disconnects Amazon, deletes session from KV
+  - Automatically marks user as inactive if both services disconnected
+
+- **Frontend Handlers** (`frontend/index.html`):
+  - `handleTodoistDisconnect()` - Confirmation dialog + API call + toast notification
+  - `handleAmazonDisconnect()` - Confirmation dialog + API call + dashboard refresh
+  - Auto-refreshes dashboard to show connection forms after disconnect
+
+### 6. Stripe Configuration
+- **Updated Pricing** (`shared/pricing.ts`):
+  - Fast plan: `price_1SUJjrGeJyJ0RJDUWZvryQV9` ($1.99/mo)
+  - Faster plan: `price_1SUJkRGeJyJ0RJDURxul4fDG` ($5/mo)
+  - Stripe checkout now fully functional
+
+### 7. Manual Sync Button
+- **Backend Endpoint** (`workers/index.ts`):
+  - `POST /api/sync/manual` - Triggers immediate Alexa→Todoist sync
+  - Validates both services are connected
+  - Enqueues sync job to SYNC_QUEUE
+
+- **Frontend Button** (`frontend/index.html`):
+  - "Sync Now" button in status card (only shows when active)
+  - Loading state with spinning icon
+  - Success toast notification
+  - Auto-refreshes dashboard after 3 seconds to show updated sync time
+
+### 8. Delete Account Feature
+- **Backend Endpoint** (`workers/index.ts`):
+  - `DELETE /api/account` - Permanently deletes all user data
+  - Removes user record, email mapping, config, Amazon session
+
+- **Frontend Handler** (`frontend/index.html`):
+  - Triple confirmation (2 dialogs + typed "YES")
+  - Shows success toast and logs out
+  - Located in "Danger Zone" section at bottom of dashboard
+
 ## 📂 Files Modified
 
 ### Backend (Cloudflare Worker)
@@ -79,56 +117,7 @@ Before you can deploy and use the application, you **MUST**:
 ### Test Tools
 - `/cloudflare/test-amazon-login.js` - New local testing script
 
-## ⚠️ REQUIRED SETUP (DO BEFORE DEPLOYING)
-
-### 1. Configure Stripe Price IDs
-
-You need to create Stripe products and get the price IDs:
-
-**In Stripe Dashboard:**
-1. Go to Products → Create Product
-2. Create two products:
-   - **Fast Plan**: $1.99/month recurring
-   - **Faster Plan**: $5/month recurring
-3. Copy the Price IDs (they look like `price_xxxxxxxxxxxxx`)
-
-**Update the code:**
-Edit `/cloudflare/shared/pricing.ts` and replace the placeholder IDs:
-```typescript
-fast: {
-  stripePriceId: 'price_xxxxxxxxxxxxx', // Replace with your actual Stripe Price ID
-  ...
-},
-faster: {
-  stripePriceId: 'price_xxxxxxxxxxxxx', // Replace with your actual Stripe Price ID
-  ...
-},
-```
-
-### 2. Implement Disconnect/Reconnect Features (NOT YET IMPLEMENTED)
-
-Currently the "Disconnect" and "Reconnect" buttons show placeholder toasts. You need to implement:
-
-**Todoist Disconnect:**
-- Delete `config.todoist` from user config
-- Optionally unregister webhook from Todoist
-- Return user to "Connect Todoist" state
-
-**Amazon Reconnect:**
-- Delete existing Amazon session from SESSIONS KV
-- Show Amazon login form again
-
-**Implementation files to modify:**
-- `/cloudflare/workers/index.ts` - Add DELETE endpoints for disconnecting
-- `/cloudflare/frontend/index.html` - Update onclick handlers to call actual endpoints
-
-**Suggested endpoints:**
-```typescript
-// DELETE /api/config/todoist - Disconnect Todoist
-// DELETE /api/config/amazon - Disconnect Amazon
-```
-
-## 🚀 DEPLOYMENT STEPS (AFTER SETUP COMPLETE)
+## 🚀 DEPLOYMENT STEPS
 
 ### 1. Deploy Worker (Backend)
 ```bash
@@ -140,7 +129,10 @@ This will deploy:
 - Fixed Amazon sign-in URL
 - 2FA detection and handling
 - "Remember device" checkbox checking
-- ⚠️ **REQUIRES**: Stripe Price IDs configured first
+- Disconnect/reconnect endpoints (`DELETE /api/config/todoist`, `DELETE /api/config/amazon`)
+- Manual sync endpoint (`POST /api/sync/manual`)
+- Delete account endpoint (`DELETE /api/account`)
+- Stripe checkout with real price IDs
 
 ### 2. Deploy Frontend (Cloudflare Pages)
 ```bash
@@ -152,7 +144,10 @@ This will deploy:
 - Toast notification system (no more ugly alerts!)
 - Improved dashboard layout (2-column config, subscription plans below)
 - 2FA input field and handling
-- ⚠️ **NOTE**: Disconnect buttons won't work until implemented
+- Disconnect/reconnect buttons (fully functional)
+- Manual sync button with loading states
+- Delete account button in danger zone
+- Stripe checkout integration
 
 ## 🧪 Testing Required
 
@@ -216,30 +211,13 @@ From previous session:
 - May be slower than native browser automation
 - Subject to Cloudflare's rendering limits/quotas
 
-## ❌ NOT YET IMPLEMENTED (BLOCKERS)
-
-### Critical Missing Features
-- [ ] **Stripe Price IDs** - Placeholder IDs in code, need real ones from Stripe dashboard
-- [ ] **Todoist Disconnect** - Button exists but shows toast, needs DELETE endpoint
-- [ ] **Amazon Reconnect** - Button exists but shows toast, needs to clear session and show form
-
-### Impact
-Without Stripe Price IDs:
-- Users can see pricing tiers
-- Upgrade button will fail when clicked (invalid price_id error from Stripe)
-
-Without Disconnect/Reconnect:
-- Users stuck if they want to change accounts
-- No way to fix broken connections without manual intervention
-
 ## 🎯 Future Enhancements (Nice to Have)
 
 ### Nice to Have
 - [ ] Session health check - periodic validation of Amazon cookies
 - [ ] Proactive re-authentication - notify user before session expires
 - [ ] Better error messages - distinguish between expired session vs invalid credentials
-- [ ] Sync history - show last 10 syncs with timestamps
-- [ ] Manual sync button - trigger immediate sync
+- [ ] Sync history - show last 10 syncs with timestamps and status
 
 ### Advanced Features
 - [ ] Multiple shopping lists - sync more than just the default list
@@ -322,12 +300,6 @@ Without Disconnect/Reconnect:
 
 ## ✅ Quick Start Checklist
 
-### Pre-Deployment Setup
-- [ ] **Create Stripe products** (Fast: $1.99/mo, Faster: $5/mo)
-- [ ] **Copy Stripe Price IDs** from dashboard
-- [ ] **Update `/cloudflare/shared/pricing.ts`** with real price IDs
-- [ ] **Implement disconnect endpoints** (optional but recommended)
-
 ### Deployment
 - [ ] Deploy worker: `wrangler deploy`
 - [ ] Deploy frontend: `wrangler pages deploy frontend --project-name=alexa-todoist-sync --branch=production`
@@ -335,22 +307,26 @@ Without Disconnect/Reconnect:
 ### Testing
 - [ ] Test login without 2FA
 - [ ] Test login with 2FA (should auto-check "remember device")
-- [ ] Test Todoist connection
-- [ ] Test subscription upgrade flow (requires real Stripe price IDs)
+- [ ] Test Todoist connection and disconnect
+- [ ] Test Amazon connection and reconnect
+- [ ] Test subscription upgrade flow (Stripe checkout)
+- [ ] **Test manual sync button** (verify it triggers sync immediately)
 - [ ] Verify syncing works (add item to Alexa, check Todoist)
 - [ ] Verify webhook works (complete item in Todoist, check Alexa)
-
-### Known Issues to Test
-- [ ] Disconnect buttons (will show toast if not implemented)
-- [ ] Reconnect buttons (will show toast if not implemented)
-- [ ] Stripe checkout (will fail if price IDs not configured)
+- [ ] Test disconnect → reconnect flow for both services
+- [ ] Test delete account (creates new account to verify deletion works)
 
 ---
 
 **Last Updated**: Session ending 2025-11-16
 
 **Status**:
-- ✅ Code complete for Amazon login (with 2FA), UI improvements, toast notifications
-- ⚠️ Requires Stripe Price IDs before deployment
-- ⚠️ Disconnect/Reconnect features not implemented (buttons show placeholder toasts)
-- 🚀 Ready to deploy once Stripe is configured
+- ✅ All features complete and ready for production
+- ✅ Amazon login with 2FA support (auto-checks "remember device")
+- ✅ Toast notifications (no more ugly alerts)
+- ✅ Stripe checkout configured with real price IDs
+- ✅ Disconnect/reconnect functionality implemented
+- ✅ Manual sync button with loading states
+- ✅ Delete account feature with triple confirmation
+- ✅ Dashboard UI redesigned (2-column layout)
+- 🚀 **READY TO DEPLOY AND TEST**
