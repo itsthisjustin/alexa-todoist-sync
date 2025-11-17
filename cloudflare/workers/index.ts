@@ -255,6 +255,9 @@ app.delete('/api/config/todoist', async (c) => {
     // Remove Todoist configuration
     delete config.todoist;
 
+    // Also clear any pending token
+    await c.env.USERS.delete(`todoist_token_pending:${payload.userId}`);
+
     // If no Amazon session either, mark as inactive
     if (!config.amazonSession) {
       config.isActive = false;
