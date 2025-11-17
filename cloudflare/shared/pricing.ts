@@ -27,7 +27,7 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     features: [
       'syncs every 30 minutes (getting fancy)',
       'todoist → alexa still instant',
-      'i'll probably respond faster if you message me',
+      "i'll probably respond faster if you message me",
     ],
   },
   faster: {
