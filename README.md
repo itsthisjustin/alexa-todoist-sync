@@ -335,13 +335,6 @@ The script uses multiple selectors to handle page changes, but if Amazon signifi
 1. Open an issue on GitHub with details
 2. Or update the selectors in `shared/sync.js` (look for the `extractItems` function)
 
-### Platform-Specific Issues
-
-See the README for your specific platform:
-- [macOS Troubleshooting](./mac/README.md#troubleshooting)
-- [Windows Troubleshooting](./windows/README.md#troubleshooting)
-- [Cloud Troubleshooting](./cloud/README.md#troubleshooting)
-
 ## 🐞 Found a bug or want to request a feature?
 
 We'd love to hear from you! Please [open an issue on GitHub](https://github.com/itsthisjustin/alexa-todoist-sync/issues) to:
