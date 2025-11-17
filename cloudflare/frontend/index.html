@@ -741,13 +741,36 @@ welcome.</pre>
         try {
           await loadConfig();
 
-          // Check if redirected back from Todoist OAuth
+          // Check if redirected back from Todoist OAuth or Stripe
           const urlParams = new URLSearchParams(window.location.search);
           if (urlParams.get('todoist_connected') === 'true') {
             // Clean URL
             window.history.replaceState({}, '', '/dashboard');
             // Show project selection
             await showProjectSelection();
+          } else if (urlParams.get('session_id')) {
+            // Stripe checkout success - poll for updated subscription
+            window.history.replaceState({}, '', '/dashboard');
+            toast('Processing your subscription... this may take a moment', 'info');
+
+            // Poll config every 2 seconds for up to 30 seconds to wait for webhook
+            let attempts = 0;
+            const maxAttempts = 15;
+            const pollInterval = setInterval(async () => {
+              attempts++;
+              const oldTier = config.subscriptionTier;
+              await loadConfig();
+
+              if (config.subscriptionTier !== oldTier && config.subscriptionTier !== 'free') {
+                clearInterval(pollInterval);
+                renderDashboard();
+                toast('Subscription upgraded successfully! You\'re now on the ' + config.subscriptionTier + ' plan.', 'success');
+              } else if (attempts >= maxAttempts) {
+                clearInterval(pollInterval);
+                renderDashboard();
+                toast('Subscription update is processing. Refresh the page in a minute to see your new plan.', 'warning');
+              }
+            }, 2000);
           } else if (urlParams.get('error')) {
             toast('Authentication error: ' + urlParams.get('error'), 'error');
             window.history.replaceState({}, '', '/dashboard');
