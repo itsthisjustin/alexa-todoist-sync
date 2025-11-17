@@ -636,14 +636,14 @@ welcome.</pre>
     };
 
     window.handleCancelSubscription = async () => {
-      const confirmed = confirm('are you sure you want to cancel your subscription? you'll be downgraded to the free tier and syncs will happen every hour instead.');
+      const confirmed = confirm('are you sure you want to cancel your subscription? you\'ll be downgraded to the free tier and syncs will happen every hour instead.');
       if (!confirmed) {
         return;
       }
 
       try {
         await api('/api/stripe/cancel', { method: 'POST' });
-        toast('subscription cancelled. you'll stay on your current plan until the end of your billing period.', 'success');
+        toast('subscription cancelled. you\'ll stay on your current plan until the end of your billing period.', 'success');
 
         // Reload config and dashboard
         setTimeout(async () => {
