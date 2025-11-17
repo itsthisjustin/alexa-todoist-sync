@@ -430,7 +430,7 @@ app.post('/api/sync/manual', async (c) => {
 
     console.log(`Manual sync triggered for user ${payload.userId}`);
 
-    return c.json({ success: true, message: 'Sync started. This may take 30-60 seconds.' });
+    return c.json({ success: true, message: 'Sync started. This may take 3-5 minutes.' });
   } catch (error: any) {
     console.error('Manual sync error:', error);
     return c.json({ error: 'Failed to start sync' }, 500);
