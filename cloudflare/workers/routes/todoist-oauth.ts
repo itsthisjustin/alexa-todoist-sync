@@ -1,7 +1,6 @@
 import { Context } from 'hono';
 import type { Env, UserConfig } from '../../shared/types';
 import { verifyToken, extractToken } from '../../shared/auth';
-import { registerTodoistWebhook } from './todoist-webhook';
 
 /**
  * Initiate Todoist OAuth flow
@@ -195,18 +194,8 @@ export async function completeTodoistSetup(c: Context<{ Bindings: Env }>) {
   // Clean up pending token
   await c.env.USERS.delete(`todoist_token_pending:${payload.userId}`);
 
-  // Register webhook for instant sync (worker domain)
-  try {
-    const webhookUrl = 'https://app.alexatodoist.com/api/todoist/webhook';
-    await registerTodoistWebhook(todoistToken, webhookUrl);
-    console.log(`Registered Todoist webhook for user ${payload.userId}`);
-  } catch (error: any) {
-    console.error('Failed to register Todoist webhook:', error);
-    // Continue anyway - webhook can be registered manually
-  }
-
   return c.json({
     success: true,
-    message: 'Todoist connected successfully! Webhooks registered for instant sync.'
+    message: 'Todoist connected successfully!'
   });
 }

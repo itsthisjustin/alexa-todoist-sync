@@ -8,7 +8,7 @@ import { performSync } from './sync';
 import { validateInterval, getDefaultInterval, PRICING_TIERS } from '../shared/pricing';
 import { updateIntervals, getPricingTiers } from './routes/intervals';
 import { createCheckoutSession, handleStripeWebhook, cancelSubscription } from './routes/stripe';
-import { handleTodoistWebhook, registerTodoistWebhook } from './routes/todoist-webhook';
+import { handleTodoistWebhook } from './routes/todoist-webhook';
 import { initiateTodoistOAuth, handleTodoistCallback, getTodoistProjects, completeTodoistSetup } from './routes/todoist-oauth';
 
 const app = new Hono<{ Bindings: Env }>();
