@@ -124,14 +124,13 @@ async function syncToTodoist(
 }
 
 /**
- * Perform sync for a user (either direction)
+ * Perform Alexa to Todoist sync for a user
  */
 export async function performSync(
   userId: string,
-  env: Env,
-  direction: 'alexa-to-todoist' | 'todoist-to-alexa'
+  env: Env
 ): Promise<void> {
-  console.log(`Starting ${direction} sync for user ${userId}`);
+  console.log(`Starting alexa-to-todoist sync for user ${userId}`);
 
   // Get user config
   const configData = await env.USERS.get(`config:${userId}`);
@@ -155,33 +154,25 @@ export async function performSync(
   const decryptedData = await decrypt(encryptedSession, env.ENCRYPTION_KEY);
   const amazonSession: AmazonSession = JSON.parse(decryptedData);
 
-  if (direction === 'alexa-to-todoist') {
-    // Scrape Amazon and push to Todoist
-    const items = await scrapeAmazonShoppingList(amazonSession, env.BROWSER);
+  // Scrape Amazon and push to Todoist
+  const items = await scrapeAmazonShoppingList(amazonSession, env.BROWSER);
 
-    if (items.length > 0) {
-      // Use local state tracking instead of fetching all Todoist tasks
-      const syncedItems = config.syncedItems || {};
-      const updatedSyncedItems = await syncToTodoist(
-        items,
-        config.todoist.apiToken,
-        config.todoist.projectId,
-        syncedItems
-      );
-      config.syncedItems = updatedSyncedItems;
-    }
-
-    // Update last sync time
-    config.lastAlexaToTodoistSync = new Date().toISOString();
-  } else {
-    // Check Todoist for completed tasks and mark them in Amazon
-    // TODO: Implement Todoist → Amazon sync
-    // This would involve checking completed tasks in Todoist
-    // and removing them from Amazon shopping list via Puppeteer
-    console.log('Todoist → Amazon sync not yet implemented');
+  if (items.length > 0) {
+    // Use local state tracking instead of fetching all Todoist tasks
+    const syncedItems = config.syncedItems || {};
+    const updatedSyncedItems = await syncToTodoist(
+      items,
+      config.todoist.apiToken,
+      config.todoist.projectId,
+      syncedItems
+    );
+    config.syncedItems = updatedSyncedItems;
   }
+
+  // Update last sync time
+  config.lastAlexaToTodoistSync = new Date().toISOString();
 
   await env.USERS.put(`config:${userId}`, JSON.stringify(config));
 
-  console.log(`${direction} sync complete for user ${userId}`);
+  console.log(`alexa-to-todoist sync complete for user ${userId}`);
 }

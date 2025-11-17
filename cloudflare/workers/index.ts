@@ -522,11 +522,7 @@ export default {
       try {
         console.log(`Processing ${jobType} job for user ${userId}`);
 
-        if (jobType === 'alexa-to-todoist') {
-          await performSync(userId, env, 'alexa-to-todoist');
-        } else if (jobType === 'todoist-to-alexa') {
-          await performSync(userId, env, 'todoist-to-alexa');
-        }
+        await performSync(userId, env);
 
         message.ack();
       } catch (error) {

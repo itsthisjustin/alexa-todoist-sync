@@ -57,5 +57,5 @@ export interface UserConfig {
 
 export interface SyncJob {
   userId: string;
-  jobType: 'alexa-to-todoist' | 'todoist-to-alexa' | 'amazon-login';
+  jobType: 'alexa-to-todoist';
 }
