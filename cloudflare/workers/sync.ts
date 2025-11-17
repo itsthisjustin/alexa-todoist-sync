@@ -75,35 +75,25 @@ async function scrapeAmazonShoppingList(
 }
 
 /**
- * Sync items to Todoist
+ * Sync items to Todoist using local state tracking (like macOS app)
  */
 async function syncToTodoist(
   items: string[],
   todoistToken: string,
-  todoistProjectId: string
-): Promise<void> {
+  todoistProjectId: string,
+  syncedItems: { [itemName: string]: string }
+): Promise<{ [itemName: string]: string }> {
   console.log(`Syncing ${items.length} items to Todoist`);
 
-  // Get existing tasks in project
-  const existingTasksRes = await fetch(
-    `https://api.todoist.com/rest/v2/tasks?project_id=${todoistProjectId}`,
-    {
-      headers: { Authorization: `Bearer ${todoistToken}` },
-    }
-  );
-
-  if (!existingTasksRes.ok) {
-    throw new Error('Failed to fetch existing Todoist tasks');
-  }
-
-  const existingTasks = await existingTasksRes.json() as Array<{ content: string; id: string }>;
-  const existingTaskContents = new Set(existingTasks.map(t => t.content.toLowerCase()));
-
-  // Add new items
+  const updatedSyncedItems = { ...syncedItems };
   let added = 0;
+
+  // Add new items that aren't in our synced state
   for (const item of items) {
-    if (existingTaskContents.has(item.toLowerCase())) {
-      console.log(`Skipping duplicate: ${item}`);
+    const itemLower = item.toLowerCase();
+
+    if (updatedSyncedItems[itemLower]) {
+      console.log(`Skipping already synced: ${item}`);
       continue;
     }
 
@@ -120,14 +110,17 @@ async function syncToTodoist(
     });
 
     if (response.ok) {
+      const task = await response.json() as { id: string };
+      updatedSyncedItems[itemLower] = task.id;
       added++;
-      console.log(`Added: ${item}`);
+      console.log(`Added: ${item} (task ${task.id})`);
     } else {
       console.error(`Failed to add: ${item}`);
     }
   }
 
   console.log(`Sync complete: added ${added} new items`);
+  return updatedSyncedItems;
 }
 
 /**
@@ -167,7 +160,15 @@ export async function performSync(
     const items = await scrapeAmazonShoppingList(amazonSession, env.BROWSER);
 
     if (items.length > 0) {
-      await syncToTodoist(items, config.todoist.apiToken, config.todoist.projectId);
+      // Use local state tracking instead of fetching all Todoist tasks
+      const syncedItems = config.syncedItems || {};
+      const updatedSyncedItems = await syncToTodoist(
+        items,
+        config.todoist.apiToken,
+        config.todoist.projectId,
+        syncedItems
+      );
+      config.syncedItems = updatedSyncedItems;
     }
 
     // Update last sync time
@@ -178,8 +179,6 @@ export async function performSync(
     // This would involve checking completed tasks in Todoist
     // and removing them from Amazon shopping list via Puppeteer
     console.log('Todoist → Amazon sync not yet implemented');
-
-    config.lastTodoistToAlexaSync = new Date().toISOString();
   }
 
   await env.USERS.put(`config:${userId}`, JSON.stringify(config));

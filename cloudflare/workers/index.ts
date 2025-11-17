@@ -407,6 +407,15 @@ app.post('/api/sync/manual', async (c) => {
       return c.json({ error: 'Sync is not active. Please connect both Amazon and Todoist.' }, 400);
     }
 
+    // Check if a sync is already in progress to prevent spam
+    const syncInProgress = await c.env.USERS.get(`sync_in_progress:${payload.userId}`);
+    if (syncInProgress) {
+      return c.json({ error: 'A sync is already in progress. Please wait.' }, 429);
+    }
+
+    // Mark sync as in progress (2 minute expiry)
+    await c.env.USERS.put(`sync_in_progress:${payload.userId}`, 'true', { expirationTtl: 120 });
+
     // Enqueue immediate Alexa → Todoist sync
     await c.env.SYNC_QUEUE.send({
       userId: payload.userId,
@@ -505,9 +514,9 @@ export default {
   // Queue consumer
   async queue(batch: MessageBatch<SyncJob>, env: Env, ctx: ExecutionContext) {
     for (const message of batch.messages) {
-      try {
-        const { userId, jobType } = message.body;
+      const { userId, jobType } = message.body;
 
+      try {
         console.log(`Processing ${jobType} job for user ${userId}`);
 
         if (jobType === 'alexa-to-todoist') {
@@ -520,6 +529,9 @@ export default {
       } catch (error) {
         console.error('Queue processing error:', error);
         message.retry();
+      } finally {
+        // Clear sync lock when job completes (success or failure)
+        await env.USERS.delete(`sync_in_progress:${userId}`);
       }
     }
   },

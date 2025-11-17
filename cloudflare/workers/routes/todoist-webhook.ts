@@ -37,19 +37,23 @@ export async function handleTodoistWebhook(c: Context<{ Bindings: Env }>) {
     const itemContent = eventData.content;
 
     // Find user config with this project ID
+    console.log(`Looking for user with project ID: ${projectId}`);
     const userId = await findUserByProjectId(c.env.USERS, projectId);
     if (!userId) {
       console.log(`No user found for project ${projectId}`);
       return c.json({ received: true });
     }
+    console.log(`Found user: ${userId}`);
 
     // Get user config
     const configData = await c.env.USERS.get(`config:${userId}`);
     if (!configData) {
+      console.log(`Config not found for user ${userId}`);
       return c.json({ error: 'Config not found' }, 404);
     }
 
     const config: UserConfig = JSON.parse(configData);
+    console.log(`User config loaded, isActive: ${config.isActive}, hasAmazonSession: ${!!config.amazonSession}`);
 
     // Skip if not active or missing Amazon session
     if (!config.isActive || !config.amazonSession) {
@@ -57,10 +61,11 @@ export async function handleTodoistWebhook(c: Context<{ Bindings: Env }>) {
       return c.json({ received: true });
     }
 
-    // Delete the completed item from Amazon Alexa shopping list
-    await deleteFromAlexaList(itemContent, config, c.env);
+    // Mark the completed item as complete on Amazon Alexa shopping list
+    console.log(`Starting to mark "${itemContent}" complete on Alexa list`);
+    await markItemCompleteOnAlexa(itemContent, config, c.env);
 
-    console.log(`Deleted "${itemContent}" from Alexa list for user ${userId}`);
+    console.log(`Marked "${itemContent}" complete on Alexa list for user ${userId}`);
 
     return c.json({ received: true });
   } catch (error: any) {
@@ -92,67 +97,169 @@ async function findUserByProjectId(
 }
 
 /**
- * Delete item from Amazon Alexa shopping list
+ * Mark item as complete on Amazon Alexa shopping list
+ * Uses the same logic as the macOS app - finds the checkbox and clicks it
  */
-async function deleteFromAlexaList(
+async function markItemCompleteOnAlexa(
   itemName: string,
   config: UserConfig,
   env: Env
 ): Promise<void> {
+  console.log(`markItemCompleteOnAlexa called for item: "${itemName}"`);
+
   if (!config.amazonSession) {
     throw new Error('No Amazon session');
   }
 
   // Decrypt session
+  console.log(`Fetching encrypted session for user: ${config.userId}`);
   const encryptedSession = await env.SESSIONS.get(`amazon:${config.userId}`);
   if (!encryptedSession) {
     throw new Error('Amazon session not found');
   }
 
+  console.log(`Decrypting Amazon session`);
   const decryptedData = await decrypt(encryptedSession, env.ENCRYPTION_KEY);
   const amazonSession = JSON.parse(decryptedData);
 
   // Launch browser and delete the item
+  console.log(`Launching browser to delete item`);
   const browser = await puppeteer.launch(env.BROWSER);
   try {
     const page = await browser.newPage();
+
+    // Set user agent (required for Amazon to serve correct page)
+    await page.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
 
     // Set cookies
     await page.setCookie(...amazonSession.cookies);
 
     // Go to shopping list
+    console.log(`Navigating to Amazon shopping list`);
     await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
-      waitUntil: 'networkidle0',
+      waitUntil: 'networkidle2',
+      timeout: 60000,
     });
 
-    // Find and delete the item
-    // This selector targets the item by text content, then finds its delete button
-    const deleted = await page.evaluate((itemText) => {
-      // Find all list items
-      const items = Array.from(document.querySelectorAll('[data-item-name]'));
+    // Check if redirected to login (session expired)
+    const url = page.url();
+    if (url.includes('/ap/signin') || url.includes('/ap/')) {
+      throw new Error('Amazon session expired - please reconnect your Amazon account');
+    }
 
-      for (const item of items) {
-        const nameEl = item.querySelector('[data-item-name]');
-        if (nameEl && nameEl.textContent?.trim().toLowerCase() === itemText.toLowerCase()) {
-          // Find the delete/complete button for this item
-          const deleteBtn = item.querySelector('[aria-label*="delete"], [aria-label*="complete"], button[data-action="delete"]');
-          if (deleteBtn) {
-            (deleteBtn as HTMLElement).click();
-            return true;
+    // Wait for shopping list items to load
+    await page.waitForSelector('.item-body, .shopping-list-container, [data-item-name]', {
+      timeout: 10000,
+    }).catch(() => {
+      console.log('No items found on shopping list');
+    });
+
+    // Find and mark the item complete (exact copy from macOS app)
+    console.log(`Searching for item "${itemName}" in shopping list`);
+    const result = await page.evaluate((name) => {
+      // Normalize the search name (case-insensitive, trimmed)
+      const searchName = name.toLowerCase().trim();
+
+      // Try multiple selectors to find the item (same as sync.ts)
+      const selectors = [
+        '.item-body .item-title',
+        '[data-item-name]',
+        '.shopping-list-item .item-name',
+        '.a-list-item span[class*="item"]',
+      ];
+
+      // Debug: list all items found on page
+      const allItems = [];
+      for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        for (const element of elements) {
+          const text = (element.dataset.itemName || element.textContent).trim();
+          if (text && text.length > 0 && text.length < 100) {
+            allItems.push(text);
           }
         }
       }
-      return false;
+
+      for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector);
+        for (const element of elements) {
+          const text = (element.dataset.itemName || element.textContent).trim();
+          const normalizedText = text.toLowerCase();
+
+          // Case-insensitive comparison
+          if (normalizedText === searchName) {
+            // Find the associated checkbox - try multiple container levels
+            let container = element.closest('.shopping-list-item, .item-row, [data-item-id], .item-body, .a-row');
+
+            // If no container, try parent elements
+            if (!container) {
+              container = element.parentElement;
+            }
+
+            // Try to find the entire row by going up more levels
+            const row = element.closest('div.a-row, li, [role="listitem"]') || container;
+
+            if (!row) {
+              return { success: false, foundItems: allItems, error: 'No row/container found for item' };
+            }
+
+            // Try to find checkbox input - search in the row and all siblings
+            let checkbox = row.querySelector('.custom-control-input, input[type="checkbox"]');
+
+            // If not found, try looking in previous siblings (checkbox might be before the text)
+            if (!checkbox && row.previousElementSibling) {
+              checkbox = row.previousElementSibling.querySelector('.custom-control-input, input[type="checkbox"]');
+            }
+
+            // Try looking in the entire parent container
+            if (!checkbox && row.parentElement) {
+              checkbox = row.parentElement.querySelector('.custom-control-input, input[type="checkbox"]');
+            }
+
+            if (!checkbox) {
+              return { success: false, foundItems: allItems, error: 'No checkbox found in row or siblings' };
+            }
+
+            // If checkbox found, click it (or its label)
+            if (checkbox.checked) {
+              return { success: false, foundItems: allItems, error: 'Checkbox already checked' };
+            }
+
+            // Try to click the label for better reliability
+            const label = checkbox.parentElement?.querySelector(`label[for="${checkbox.id}"], .custom-control-label`) ||
+                         document.querySelector(`label[for="${checkbox.id}"]`);
+            if (label) {
+              label.click();
+              return { success: true, foundItems: allItems };
+            } else {
+              checkbox.click();
+              return { success: true, foundItems: allItems };
+            }
+          }
+        }
+      }
+      return { success: false, foundItems: allItems };
     }, itemName);
 
-    if (deleted) {
-      // Wait for the deletion to complete
+    if (result.success) {
+      // Wait for the action to complete
       await page.waitForTimeout(1000);
-      console.log(`Deleted "${itemName}" from Alexa list`);
+      console.log(`Successfully marked "${itemName}" complete on Alexa list`);
     } else {
-      console.log(`Item "${itemName}" not found in Alexa list (may have been already deleted)`);
+      console.log(`Could not find item to mark complete: ${itemName}`);
+      if (result.error) {
+        console.log(`Reason: ${result.error}`);
+      }
+      if (result.foundItems && result.foundItems.length > 0) {
+        console.log(`Items found on page: ${result.foundItems.join(', ')}`);
+      } else {
+        console.log(`No items found on page`);
+      }
     }
   } finally {
+    console.log(`Closing browser`);
     await browser.close();
   }
 }
