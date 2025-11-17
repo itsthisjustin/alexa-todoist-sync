@@ -147,6 +147,163 @@ async function syncToTodoist(
 }
 
 /**
+ * Mark multiple items as complete on Amazon Alexa shopping list (batched)
+ */
+export async function markMultipleItemsCompleteOnAlexa(
+  itemNames: string[],
+  userId: string,
+  env: Env
+): Promise<void> {
+  if (itemNames.length === 0) return;
+
+  console.log(`markMultipleItemsCompleteOnAlexa for ${itemNames.length} items (user: ${userId})`);
+
+  // Get user config
+  const configData = await env.USERS.get(`config:${userId}`);
+  if (!configData) {
+    throw new Error('User config not found');
+  }
+
+  const config: UserConfig = JSON.parse(configData);
+
+  if (!config.amazonSession) {
+    throw new Error('No Amazon session');
+  }
+
+  // Get encrypted Amazon session
+  const encryptedSession = await env.SESSIONS.get(`amazon:${userId}`);
+  if (!encryptedSession) {
+    throw new Error('Amazon session not found');
+  }
+
+  // Decrypt session
+  const decryptedData = await decrypt(encryptedSession, env.ENCRYPTION_KEY);
+  const amazonSession: AmazonSession = JSON.parse(decryptedData);
+
+  // Launch browser once for all items
+  const browser = await puppeteer.launch(env.BROWSER);
+  try {
+    const page = await browser.newPage();
+
+    // Set user agent
+    await page.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+
+    // Set cookies
+    await page.setCookie(...amazonSession.cookies);
+
+    // Navigate to shopping list
+    await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+      waitUntil: 'networkidle2',
+      timeout: 60000,
+    });
+
+    // Check if redirected to login (session expired)
+    const url = page.url();
+    if (url.includes('/ap/signin') || url.includes('/ap/')) {
+      throw new Error('Amazon session expired - please reconnect your Amazon account');
+    }
+
+    // Wait for shopping list items
+    await page.waitForSelector('.item-body, .shopping-list-container, [data-item-name]', {
+      timeout: 10000,
+    }).catch(() => {
+      console.log('No items found on shopping list');
+    });
+
+    // Mark each item complete
+    const completedItems: string[] = [];
+    for (const itemName of itemNames) {
+      const result = await page.evaluate((name) => {
+        const searchName = name.toLowerCase().trim();
+
+        const selectors = [
+          '.item-body .item-title',
+          '[data-item-name]',
+          '.shopping-list-item .item-name',
+          '.a-list-item span[class*="item"]',
+        ];
+
+        for (const selector of selectors) {
+          const elements = document.querySelectorAll(selector);
+          for (const element of elements) {
+            const text = (element.dataset?.itemName || element.textContent)?.trim() || '';
+            const normalizedText = text.toLowerCase();
+
+            if (normalizedText === searchName) {
+              let container = element.closest('.shopping-list-item, .item-row, [data-item-id], .item-body, .a-row');
+              if (!container) container = element.parentElement;
+
+              const row = element.closest('div.a-row, li, [role="listitem"]') || container;
+              if (!row) return { success: false, error: 'No row found' };
+
+              let checkbox = row.querySelector('.custom-control-input, input[type="checkbox"]');
+              if (!checkbox && row.previousElementSibling) {
+                checkbox = row.previousElementSibling.querySelector('.custom-control-input, input[type="checkbox"]');
+              }
+              if (!checkbox && row.parentElement) {
+                checkbox = row.parentElement.querySelector('.custom-control-input, input[type="checkbox"]');
+              }
+
+              if (!checkbox) return { success: false, error: 'No checkbox found' };
+              if (checkbox.checked) return { success: false, error: 'Already checked' };
+
+              const label = checkbox.parentElement?.querySelector(`label[for="${checkbox.id}"], .custom-control-label`) ||
+                           document.querySelector(`label[for="${checkbox.id}"]`);
+              if (label) {
+                label.click();
+              } else {
+                checkbox.click();
+              }
+              return { success: true };
+            }
+          }
+        }
+        return { success: false, error: 'Item not found' };
+      }, itemName);
+
+      if (result.success) {
+        completedItems.push(itemName);
+        console.log(`✓ Marked complete: ${itemName}`);
+        // Small delay between clicks
+        await page.waitForTimeout(500);
+      } else {
+        console.log(`✗ Could not mark complete: ${itemName} (${result.error || 'unknown error'})`);
+      }
+    }
+
+    // Update syncedItems for all completed items
+    if (completedItems.length > 0) {
+      if (!config.syncedItems) config.syncedItems = {};
+
+      for (const itemName of completedItems) {
+        const itemLower = itemName.toLowerCase();
+        if (config.syncedItems[itemLower]) {
+          config.syncedItems[itemLower].completedOnAlexa = true;
+        }
+      }
+
+      await env.USERS.put(`config:${userId}`, JSON.stringify(config));
+      console.log(`Updated state for ${completedItems.length} items marked as completedOnAlexa`);
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Mark item as complete on Amazon Alexa shopping list (wrapper for batched version)
+ */
+export async function markItemCompleteOnAlexa(
+  itemName: string,
+  userId: string,
+  env: Env
+): Promise<void> {
+  return markMultipleItemsCompleteOnAlexa([itemName], userId, env);
+}
+
+/**
  * Perform Alexa to Todoist sync for a user
  */
 export async function performSync(

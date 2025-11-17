@@ -4,7 +4,7 @@ import type { Env, User, UserConfig, SyncJob } from '../shared/types';
 import { hashPassword, verifyPassword, encrypt, decrypt } from '../shared/crypto';
 import { createToken, verifyToken, extractToken } from '../shared/auth';
 import { loginToAmazon } from './amazon-login';
-import { performSync } from './sync';
+import { performSync, markMultipleItemsCompleteOnAlexa } from './sync';
 import { validateInterval, getDefaultInterval, PRICING_TIERS } from '../shared/pricing';
 import { updateIntervals, getPricingTiers } from './routes/intervals';
 import { createCheckoutSession, handleStripeWebhook, cancelSubscription } from './routes/stripe';
@@ -519,21 +519,54 @@ export default {
 
   // Queue consumer
   async queue(batch: MessageBatch<SyncJob>, env: Env, ctx: ExecutionContext) {
+    // Group messages by userId and jobType for batching
+    const alexaToTodoistJobs = new Map<string, typeof batch.messages[0]>();
+    const todoistToAlexaJobs = new Map<string, { messages: typeof batch.messages, items: string[] }>();
+
     for (const message of batch.messages) {
-      const { userId, jobType } = message.body;
+      const { userId, jobType, itemName } = message.body;
 
+      if (jobType === 'alexa-to-todoist') {
+        alexaToTodoistJobs.set(userId, message);
+      } else if (jobType === 'todoist-to-alexa' && itemName) {
+        if (!todoistToAlexaJobs.has(userId)) {
+          todoistToAlexaJobs.set(userId, { messages: [], items: [] });
+        }
+        const userJobs = todoistToAlexaJobs.get(userId)!;
+        userJobs.messages.push(message);
+        userJobs.items.push(itemName);
+      }
+    }
+
+    // Process alexa-to-todoist jobs (one per user)
+    for (const [userId, message] of alexaToTodoistJobs) {
       try {
-        console.log(`Processing ${jobType} job for user ${userId}`);
-
+        console.log(`Processing alexa-to-todoist for user ${userId}`);
         await performSync(userId, env);
-
         message.ack();
       } catch (error) {
-        console.error('Queue processing error:', error);
+        console.error(`alexa-to-todoist error for user ${userId}:`, error);
         message.retry();
       } finally {
-        // Clear sync lock when job completes (success or failure)
         await env.USERS.delete(`sync_in_progress:${userId}`);
+      }
+    }
+
+    // Process todoist-to-alexa jobs (batched per user)
+    for (const [userId, { messages, items }] of todoistToAlexaJobs) {
+      try {
+        console.log(`Processing ${items.length} todoist-to-alexa items for user ${userId}`);
+        await markMultipleItemsCompleteOnAlexa(items, userId, env);
+        // Ack all messages for this user
+        for (const msg of messages) {
+          msg.ack();
+        }
+      } catch (error) {
+        console.error(`todoist-to-alexa error for user ${userId}:`, error);
+        // Retry all messages for this user
+        for (const msg of messages) {
+          msg.retry();
+        }
       }
     }
   },

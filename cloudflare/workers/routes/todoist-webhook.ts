@@ -61,23 +61,16 @@ export async function handleTodoistWebhook(c: Context<{ Bindings: Env }>) {
       return c.json({ received: true });
     }
 
-    // Mark the completed item as complete on Amazon Alexa shopping list
-    console.log(`Starting to mark "${itemContent}" complete on Alexa list`);
-    const success = await markItemCompleteOnAlexa(itemContent, config, c.env);
+    // Enqueue job to mark item complete on Alexa (prevents browser exhaustion from rapid webhooks)
+    console.log(`Enqueueing todoist-to-alexa job for "${itemContent}"`);
+    await c.env.SYNC_QUEUE.send({
+      userId,
+      jobType: 'todoist-to-alexa',
+      itemName: itemContent,
+      itemId: itemId,
+    });
 
-    if (success) {
-      // Update syncedItems to mark this item as completed on Alexa
-      const itemLower = itemContent.toLowerCase();
-      if (!config.syncedItems) config.syncedItems = {};
-
-      if (config.syncedItems[itemLower]) {
-        config.syncedItems[itemLower].completedOnAlexa = true;
-        await c.env.USERS.put(`config:${userId}`, JSON.stringify(config));
-        console.log(`Updated state: "${itemContent}" marked as completedOnAlexa`);
-      }
-    }
-
-    console.log(`Marked "${itemContent}" complete on Alexa list for user ${userId}`);
+    console.log(`Enqueued todoist-to-alexa job for user ${userId}`);
 
     return c.json({ received: true });
   } catch (error: any) {
