@@ -37,7 +37,7 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     stripePriceId: 'price_1SUJkRGeJyJ0RJDURxul4fDG',
     features: [
       'syncs every 5 minutes (honestly overkill)',
-      'todoist → alexa still instant (same as free tier)',
+      'todoist → alexa still instant',
       'want it to work with something other than todoist? ask me',
     ],
   },
