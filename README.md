@@ -136,7 +136,6 @@ The easiest way to get started is with the Cloudflare Workers deployment:
    ```
 
 7. **Set up Todoist OAuth** (optional but recommended)
-   - Follow [TODOIST_OAUTH_SETUP.md](./cloudflare/TODOIST_OAUTH_SETUP.md)
    - Set the client ID and secret:
      ```bash
      wrangler secret put TODOIST_CLIENT_ID
@@ -144,7 +143,6 @@ The easiest way to get started is with the Cloudflare Workers deployment:
      ```
 
 8. **Set up Stripe** (optional - for paid tiers)
-   - Follow [STRIPE_SETUP.md](./cloudflare/STRIPE_SETUP.md)
    - Set the keys:
      ```bash
      wrangler secret put STRIPE_SECRET_KEY
@@ -254,32 +252,6 @@ All platforms use the same `config.json` format:
 | `todoistCheckIntervalHours` | How often to check Todoist for completed tasks | `24` |
 | `stateFile` | Where to store sync state | `"sync-state.json"` |
 
-## 📁 Project Structure
-
-```
-alexa-todoist-sync/
-├── cloudflare/            # Cloudflare Workers (serverless, recommended)
-│   ├── README.md          # Cloudflare deployment guide
-│   ├── frontend/          # Static frontend (HTML/JS)
-│   ├── workers/           # Worker scripts
-│   ├── shared/            # Shared types and utilities
-│   ├── wrangler.toml.example  # Cloudflare configuration template
-│   └── package.json       # Dependencies
-├── mac/                   # macOS-specific files (tested)
-│   ├── install.sh         # macOS installation script
-│   └── com.alexassync.plist  # LaunchDaemon configuration
-├── windows/               # Windows-specific files (untested)
-│   └── install.ps1        # Windows installation script
-├── cloud/                 # Cloud/EC2 deployment files (untested)
-│   └── install.sh         # Linux installation script
-├── shared/                # Shared files for local deployments
-│   ├── sync.js            # Main sync script
-│   └── config.json.template  # Configuration template
-├── package.json           # Node.js dependencies
-├── .gitignore            # Git ignore rules
-└── README.md             # This file
-```
-
 ## 🛠️ Manual Usage
 
 All platforms support these commands:
@@ -370,24 +342,5 @@ MIT
 
 - Built with [Puppeteer](https://pptr.dev/) for web automation
 - Uses the [Todoist REST API](https://developer.todoist.com/rest/v2/)
-
----
-
-## Platform Comparison
-
-| Feature | Cloudflare | macOS | Windows | Cloud/EC2 |
-|---------|------------|-------|---------|-----------|
-| **Status** | ⭐ Production Ready | ✅ Tested | ⚠️ Untested | ⚠️ Untested |
-| **Setup Complexity** | Moderate | Easy | Easy | Moderate |
-| **Always On** | ✅ 24/7 | Only when computer is running | Only when computer is running | ✅ 24/7 |
-| **Sync Method** | Todoist Webhooks (instant) | Polling | Polling | Polling |
-| **Todoist Auth** | OAuth (secure) | API Token | API Token | API Token |
-| **Cost** | Free tier, then ~$5-25/user/month | Free | Free | ~$4-10/month |
-| **Requires Computer** | ❌ | ✅ (Always-on Mac) | ✅ | ❌ |
-| **Scalable** | ✅ Unlimited users | Single user | Single user | Single user |
-| **Maintenance** | Zero | Minimal | Minimal | Moderate |
-| **Best For** | Anyone wanting a modern, scalable solution | Mac users with always-on computer | Windows testers & contributors | Cloud testers & contributors |
-
----
 
 **Questions or issues?** Please open an issue on GitHub!
