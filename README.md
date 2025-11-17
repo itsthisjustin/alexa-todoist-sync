@@ -371,23 +371,4 @@ MIT
 - Built with [Puppeteer](https://pptr.dev/) for web automation
 - Uses the [Todoist REST API](https://developer.todoist.com/rest/v2/)
 
----
-
-## Platform Comparison
-
-| Feature | Cloudflare | macOS | Windows | Cloud/EC2 |
-|---------|------------|-------|---------|-----------|
-| **Status** | ⭐ Production Ready | ✅ Tested | ⚠️ Untested | ⚠️ Untested |
-| **Setup Complexity** | Moderate | Easy | Easy | Moderate |
-| **Always On** | ✅ 24/7 | Only when computer is running | Only when computer is running | ✅ 24/7 |
-| **Sync Method** | Todoist Webhooks (instant) | Polling | Polling | Polling |
-| **Todoist Auth** | OAuth (secure) | API Token | API Token | API Token |
-| **Cost** | Free tier, then ~$5-25/user/month | Free | Free | ~$4-10/month |
-| **Requires Computer** | ❌ | ✅ (Always-on Mac) | ✅ | ❌ |
-| **Scalable** | ✅ Unlimited users | Single user | Single user | Single user |
-| **Maintenance** | Zero | Minimal | Minimal | Moderate |
-| **Best For** | Anyone wanting a modern, scalable solution | Mac users with always-on computer | Windows testers & contributors | Cloud testers & contributors |
-
----
-
 **Questions or issues?** Please open an issue on GitHub!
