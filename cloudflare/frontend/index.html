@@ -329,7 +329,7 @@ welcome.</pre>
                       ${t.price === 0 ? 'free' : '$' + t.price}<span class="text-sm text-gray-600 font-mono">/mo</span>
                     </p>
                     <ul class="text-sm space-y-2 mb-4 font-mono">
-                      ${t.features.map(f => `<li class="flex items-start gap-2"><span class="text-gray-600">•</span><span class="text-gray-700">${f}</span></li>`).join('')}
+                      ${t.features.map(f => `<li class="flex items-start gap-2"><span class="text-gray-600">•</span><span class="text-gray-700">${f.replace(/'/g, '&#39;')}</span></li>`).join('')}
                     </ul>
                     ${key !== tier && key !== 'free' ? `
                       <button onclick="handleUpgrade('${key}')" class="mt-2 w-full bg-gray-900 text-white py-2 rounded hover:bg-gray-800 text-sm font-mono">
