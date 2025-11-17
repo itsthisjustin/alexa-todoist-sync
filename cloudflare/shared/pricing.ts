@@ -23,7 +23,7 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     name: 'Fast',
     price: 1.99,
     minAlexaInterval: 30, // Poll Amazon every 30 minutes
-    stripePriceId: 'price_fast_monthly', // TODO: Replace with actual Stripe Price ID
+    stripePriceId: 'price_1SUJjrGeJyJ0RJDUWZvryQV9',
     features: [
       'Sync Alexa → Todoist every 30 minutes',
       'Instant Todoist → Alexa sync (webhooks)',
@@ -34,7 +34,7 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     name: 'Faster',
     price: 5,
     minAlexaInterval: 5, // Poll Amazon every 5 minutes
-    stripePriceId: 'price_faster_monthly', // TODO: Replace with actual Stripe Price ID
+    stripePriceId: 'price_1SUJkRGeJyJ0RJDURxul4fDG',
     features: [
       'Sync Alexa → Todoist every 5 minutes',
       'Instant Todoist → Alexa sync (webhooks)',
