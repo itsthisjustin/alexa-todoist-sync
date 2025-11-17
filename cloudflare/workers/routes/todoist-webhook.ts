@@ -83,15 +83,33 @@ async function findUserByProjectId(
 ): Promise<string | null> {
   const { keys } = await kv.list({ prefix: 'config:' });
 
+  // Debug: log all stored project IDs for comparison
+  const storedProjectIds: Array<{ userId: string, projectId: string | undefined, type: string }> = [];
+
   for (const key of keys) {
     const configData = await kv.get(key.name);
     if (!configData) continue;
 
     const config: UserConfig = JSON.parse(configData);
+
+    // Track all project IDs for debugging
+    if (config.todoist?.projectId) {
+      storedProjectIds.push({
+        userId: config.userId,
+        projectId: config.todoist.projectId,
+        type: typeof config.todoist.projectId
+      });
+    }
+
     if (config.todoist?.projectId === projectId) {
+      console.log(`✓ Match found! Stored: ${config.todoist.projectId} === Webhook: ${projectId}`);
       return config.userId;
     }
   }
+
+  // If no match, log what we found for debugging
+  console.log(`✗ No match for webhook project_id: ${projectId} (type: ${typeof projectId})`);
+  console.log(`Stored project IDs:`, storedProjectIds);
 
   return null;
 }

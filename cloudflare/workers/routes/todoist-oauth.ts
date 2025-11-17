@@ -125,8 +125,8 @@ export async function getTodoistProjects(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'No pending Todoist authorization. Please reconnect.' }, 400);
   }
 
-  // Fetch projects from Todoist
-  const projectsResponse = await fetch('https://api.todoist.com/rest/v2/projects', {
+  // Fetch projects from Todoist API v1
+  const projectsResponse = await fetch('https://api.todoist.com/api/v1/projects', {
     headers: { Authorization: `Bearer ${todoistToken}` },
   });
 
@@ -134,11 +134,15 @@ export async function getTodoistProjects(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Failed to fetch projects' }, 500);
   }
 
-  const projects = await projectsResponse.json();
+  const responseData = await projectsResponse.json();
+
+  // API v1 returns { results: [...], next_cursor: null }
+  const projects = responseData.results || [];
 
   // Log all projects for debugging
   console.log(`Fetched ${projects.length} projects from Todoist API`);
   if (projects.length > 0) {
+    console.log(`First project FULL object:`, JSON.stringify(projects[0]));
     console.log(`First project ID format: ${projects[0].id} (type: ${typeof projects[0].id})`);
     console.log('All user projects:', projects.map((p: any) => `${p.name} (${p.id})`).join(', '));
   }
@@ -173,22 +177,8 @@ export async function completeTodoistSetup(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'No pending Todoist authorization. Please reconnect.' }, 400);
   }
 
-  // Verify project exists and belongs to user
-  const projectResponse = await fetch(`https://api.todoist.com/rest/v2/projects/${projectId}`, {
-    headers: { Authorization: `Bearer ${todoistToken}` },
-  });
-
-  if (!projectResponse.ok) {
-    return c.json({ error: 'Invalid project ID' }, 400);
-  }
-
-  const project = await projectResponse.json();
-
-  // Ensure we're using the v2 project ID format (string, not numeric)
-  // Todoist REST API v2 returns string IDs, which match webhook project_id format
-  const v2ProjectId = project.id || projectId;
-
-  console.log(`Storing project ID: ${v2ProjectId} (type: ${typeof v2ProjectId}) for user ${payload.userId}`);
+  // Project ID comes from API v1 (via getTodoistProjects)
+  console.log(`Storing project ID: ${projectId} (type: ${typeof projectId}) for user ${payload.userId}`);
 
   // Update user config
   const configData = await c.env.USERS.get(`config:${payload.userId}`);
@@ -198,7 +188,7 @@ export async function completeTodoistSetup(c: Context<{ Bindings: Env }>) {
     isActive: false
   };
 
-  config.todoist = { apiToken: todoistToken, projectId: v2ProjectId };
+  config.todoist = { apiToken: todoistToken, projectId: projectId };
 
   await c.env.USERS.put(`config:${payload.userId}`, JSON.stringify(config));
 
