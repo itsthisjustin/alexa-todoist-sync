@@ -136,9 +136,11 @@ export async function getTodoistProjects(c: Context<{ Bindings: Env }>) {
 
   const projects = await projectsResponse.json();
 
-  // Log project ID format for debugging
+  // Log all projects for debugging
+  console.log(`Fetched ${projects.length} projects from Todoist API`);
   if (projects.length > 0) {
-    console.log(`Sample project ID format: ${projects[0].id} (type: ${typeof projects[0].id})`);
+    console.log(`First project ID format: ${projects[0].id} (type: ${typeof projects[0].id})`);
+    console.log('All user projects:', projects.map((p: any) => `${p.name} (${p.id})`).join(', '));
   }
 
   return c.json({ projects });

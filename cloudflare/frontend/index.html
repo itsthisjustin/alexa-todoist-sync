@@ -708,9 +708,16 @@ welcome.</pre>
       }
     };
 
-    window.closeProjectModal = () => {
+    window.closeProjectModal = async () => {
       const modal = document.querySelector('.fixed.inset-0');
       if (modal) modal.remove();
+
+      // Clean up pending Todoist token when canceling
+      try {
+        await api('/api/config/todoist', { method: 'DELETE' });
+      } catch (error) {
+        // Ignore errors - token might not exist
+      }
     };
 
     // Initialize
