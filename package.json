@@ -1,0 +1,16 @@
+{
+  "name": "alexa-todoist-sync",
+  "version": "2.0.0",
+  "description": "Syncs Alexa Shopping List items to Todoist (runs locally)",
+  "main": "sync.js",
+  "scripts": {
+    "start": "node sync.js",
+    "test": "node sync.js --dry-run"
+  },
+  "dependencies": {
+    "puppeteer": "^24.15.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
