@@ -36,7 +36,10 @@ queue = "alexa-todoist-sync-queue"
 
 [[queues.consumers]]
 queue = "alexa-todoist-sync-queue"
-max_batch_size = 1  # Process one job at a time to avoid CPU limits with Puppeteer
+# Free tier: Use 1 to avoid CPU limits (10ms limit)
+# Paid tier: Use 5-10 for better throughput (50ms limit)
+# Note: Cloudflare can run multiple consumers concurrently for scalability
+max_batch_size = 1
 max_batch_timeout = 30
 max_retries = 3
 
