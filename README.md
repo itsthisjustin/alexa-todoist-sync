@@ -2,6 +2,12 @@
 
 > Automatically sync items from your Alexa Shopping List to Todoist
 
+## 🌐 Hosted Version (No Setup Required!)
+
+**Don't want to host it yourself or run it locally?** Sign up for the hosted version at [alexatodoist.com](https://alexatodoist.com) and start syncing immediately - no configuration or deployment needed!
+
+---
+
 ## 🎯 Choose Your Platform
 
 This project supports multiple deployment options. Choose the one that fits your needs:
