@@ -14,9 +14,9 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     price: 0,
     minAlexaInterval: 60, // Poll Amazon max once per hour
     features: [
-      'Sync Alexa Shopping List to Todoist every hour',
-      'Automatically mark Alexa Shopping List items as done from Todoist',
-      'Basic email support at justin@jmitch.com',
+      'syncs every hour (good enough for groceries)',
+      'todoist → alexa happens instantly via webhooks',
+      'email me at justin@jmitch.com if something breaks',
     ],
   },
   fast: {
@@ -25,9 +25,9 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     minAlexaInterval: 30, // Poll Amazon every 30 minutes
     stripePriceId: 'price_1SUJjrGeJyJ0RJDUWZvryQV9',
     features: [
-      'Sync Alexa Shopping List to Todoist every 30 min',
-      'Automatically mark Alexa Shopping List items as done from Todoist',
-      'Priority support via some chat app you find me on',
+      'syncs every 30 minutes (getting fancy)',
+      'todoist → alexa still instant',
+      'i'll probably respond faster if you message me',
     ],
   },
   faster: {
@@ -36,9 +36,9 @@ export const PRICING_TIERS: Record<SubscriptionTier, PricingTier> = {
     minAlexaInterval: 5, // Poll Amazon every 5 minutes
     stripePriceId: 'price_1SUJkRGeJyJ0RJDURxul4fDG',
     features: [
-      'Sync Alexa Shopping List to Todoist every 5 minutes',
-      'Automatically mark Alexa Shopping List items as done from Todoist',
-      'Request custom integrations for other todo apps',
+      'syncs every 5 minutes (honestly overkill)',
+      'todoist → alexa still instant (same as free tier)',
+      'want it to work with something other than todoist? ask me',
     ],
   },
 };

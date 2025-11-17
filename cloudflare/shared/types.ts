@@ -18,6 +18,8 @@ export interface User {
   email: string;
   passwordHash: string;
   subscriptionTier: SubscriptionTier;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
   createdAt: string;
 }
 
