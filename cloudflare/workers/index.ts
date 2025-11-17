@@ -7,7 +7,7 @@ import { loginToAmazon } from './amazon-login';
 import { performSync } from './sync';
 import { validateInterval, getDefaultInterval, PRICING_TIERS } from '../shared/pricing';
 import { updateIntervals, getPricingTiers } from './routes/intervals';
-import { createCheckoutSession, handleStripeWebhook } from './routes/stripe';
+import { createCheckoutSession, handleStripeWebhook, cancelSubscription } from './routes/stripe';
 import { handleTodoistWebhook, registerTodoistWebhook } from './routes/todoist-webhook';
 import { initiateTodoistOAuth, handleTodoistCallback, getTodoistProjects, completeTodoistSetup } from './routes/todoist-oauth';
 
@@ -335,6 +335,22 @@ app.delete('/api/account', async (c) => {
 
     const user: User = JSON.parse(userData);
 
+    // Cancel Stripe subscription if active
+    if (user.stripeSubscriptionId) {
+      try {
+        await fetch(`https://api.stripe.com/v1/subscriptions/${user.stripeSubscriptionId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${c.env.STRIPE_SECRET_KEY}`,
+          },
+        });
+        console.log(`Cancelled Stripe subscription for user ${payload.userId}`);
+      } catch (stripeError) {
+        console.error('Failed to cancel Stripe subscription:', stripeError);
+        // Continue with account deletion even if Stripe cancellation fails
+      }
+    }
+
     // Delete all user data
     await Promise.all([
       // Delete user record
@@ -429,6 +445,11 @@ app.post('/api/stripe/checkout', createCheckoutSession);
  * Stripe webhook handler
  */
 app.post('/api/stripe/webhook', handleStripeWebhook);
+
+/**
+ * Cancel Stripe subscription
+ */
+app.post('/api/stripe/cancel', cancelSubscription);
 
 // ==================== TODOIST WEBHOOK ====================
 

@@ -28,6 +28,13 @@ export async function createCheckoutSession(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Stripe price not configured' }, 500);
   }
 
+  // Get user email for Stripe customer
+  const userData = await c.env.USERS.get(`user:${payload.userId}`);
+  if (!userData) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  const user: User = JSON.parse(userData);
+
   // Create Stripe Checkout Session
   const checkoutSession = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
@@ -37,6 +44,7 @@ export async function createCheckoutSession(c: Context<{ Bindings: Env }>) {
     },
     body: new URLSearchParams({
       'mode': 'subscription',
+      'customer_email': user.email,
       'line_items[0][price]': pricingTier.stripePriceId,
       'line_items[0][quantity]': '1',
       'success_url': `https://alexatodoist.com/dashboard?session_id={CHECKOUT_SESSION_ID}`,
@@ -44,6 +52,7 @@ export async function createCheckoutSession(c: Context<{ Bindings: Env }>) {
       'client_reference_id': payload.userId,
       'metadata[userId]': payload.userId,
       'metadata[tier]': tier,
+      'subscription_data[metadata][userId]': payload.userId,
     }),
   });
 
@@ -56,6 +65,50 @@ export async function createCheckoutSession(c: Context<{ Bindings: Env }>) {
   const session = await checkoutSession.json() as any;
 
   return c.json({ url: session.url });
+}
+
+/**
+ * Cancel Stripe Subscription
+ */
+export async function cancelSubscription(c: Context<{ Bindings: Env }>) {
+  const token = extractToken(c.req.raw);
+  if (!token) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const payload = await verifyToken(token, c.env.JWT_SECRET);
+  if (!payload) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  // Get user
+  const userData = await c.env.USERS.get(`user:${payload.userId}`);
+  if (!userData) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  const user: User = JSON.parse(userData);
+
+  if (!user.stripeSubscriptionId) {
+    return c.json({ error: 'No active subscription' }, 400);
+  }
+
+  // Cancel subscription at period end
+  const cancelResponse = await fetch(`https://api.stripe.com/v1/subscriptions/${user.stripeSubscriptionId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${c.env.STRIPE_SECRET_KEY}`,
+    },
+  });
+
+  if (!cancelResponse.ok) {
+    const error = await cancelResponse.text();
+    console.error('Stripe cancellation error:', error);
+    return c.json({ error: 'Failed to cancel subscription' }, 500);
+  }
+
+  // The webhook will handle downgrading the user to free tier
+  return c.json({ success: true, message: 'Subscription cancelled successfully' });
 }
 
 /**
@@ -102,6 +155,8 @@ export async function handleStripeWebhook(c: Context<{ Bindings: Env }>) {
 
     const user: User = JSON.parse(userData);
     user.subscriptionTier = tier;
+    user.stripeCustomerId = session.customer;
+    user.stripeSubscriptionId = session.subscription;
     await c.env.USERS.put(`user:${userId}`, JSON.stringify(user));
 
     // Update config with new default interval for the tier
@@ -126,6 +181,8 @@ export async function handleStripeWebhook(c: Context<{ Bindings: Env }>) {
       if (userData) {
         const user: User = JSON.parse(userData);
         user.subscriptionTier = 'free';
+        delete user.stripeCustomerId;
+        delete user.stripeSubscriptionId;
         await c.env.USERS.put(`user:${userId}`, JSON.stringify(user));
 
         // Reset to free tier interval
