@@ -1,0 +1,61 @@
+name = "alexa-todoist-sync"
+main = "workers/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Account details (get from wrangler whoami)
+# account_id = "YOUR_ACCOUNT_ID"
+
+# Browser Rendering binding
+browser = { binding = "BROWSER" }
+
+# KV Namespaces
+# Create with: wrangler kv:namespace create SESSIONS
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "YOUR_SESSIONS_KV_ID"
+preview_id = "YOUR_SESSIONS_PREVIEW_KV_ID"
+
+# Create with: wrangler kv:namespace create USERS
+[[kv_namespaces]]
+binding = "USERS"
+id = "YOUR_USERS_KV_ID"
+preview_id = "YOUR_USERS_PREVIEW_KV_ID"
+
+# D1 Database (optional - use instead of KV if you prefer SQL)
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "alexa-todoist-sync"
+# database_id = "YOUR_DATABASE_ID"
+
+# Queues
+# Create with: wrangler queues create alexa-todoist-sync-queue
+[[queues.producers]]
+binding = "SYNC_QUEUE"
+queue = "alexa-todoist-sync-queue"
+
+[[queues.consumers]]
+queue = "alexa-todoist-sync-queue"
+max_batch_size = 1  # Process one job at a time to avoid CPU limits with Puppeteer
+max_batch_timeout = 30
+max_retries = 3
+
+# Environment variables (set via wrangler secret put)
+# ENCRYPTION_KEY - for encrypting Amazon sessions
+# JWT_SECRET - for user session tokens
+# STRIPE_SECRET_KEY - Stripe secret key for creating checkout sessions
+# STRIPE_WEBHOOK_SECRET - Stripe webhook signing secret
+# TODOIST_CLIENT_ID - Todoist OAuth app client ID
+# TODOIST_CLIENT_SECRET - Todoist OAuth app client secret
+
+# Cron triggers for scheduling syncs
+# Note: This checks which users need syncing, then enqueues jobs
+# Actual sync frequency is configured per-user (alexaToTodoistInterval)
+[triggers]
+crons = ["*/5 * * * *"]  # Run every 5 minutes to check for due syncs
+
+# Observability configuration
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+invocation_logs = true

@@ -136,6 +136,11 @@ export async function getTodoistProjects(c: Context<{ Bindings: Env }>) {
 
   const projects = await projectsResponse.json();
 
+  // Log project ID format for debugging
+  if (projects.length > 0) {
+    console.log(`Sample project ID format: ${projects[0].id} (type: ${typeof projects[0].id})`);
+  }
+
   return c.json({ projects });
 }
 
@@ -175,6 +180,14 @@ export async function completeTodoistSetup(c: Context<{ Bindings: Env }>) {
     return c.json({ error: 'Invalid project ID' }, 400);
   }
 
+  const project = await projectResponse.json();
+
+  // Ensure we're using the v2 project ID format (string, not numeric)
+  // Todoist REST API v2 returns string IDs, which match webhook project_id format
+  const v2ProjectId = project.id || projectId;
+
+  console.log(`Storing project ID: ${v2ProjectId} (type: ${typeof v2ProjectId}) for user ${payload.userId}`);
+
   // Update user config
   const configData = await c.env.USERS.get(`config:${payload.userId}`);
   const config: UserConfig = configData ? JSON.parse(configData) : {
@@ -183,7 +196,7 @@ export async function completeTodoistSetup(c: Context<{ Bindings: Env }>) {
     isActive: false
   };
 
-  config.todoist = { apiToken: todoistToken, projectId };
+  config.todoist = { apiToken: todoistToken, projectId: v2ProjectId };
 
   await c.env.USERS.put(`config:${payload.userId}`, JSON.stringify(config));
 

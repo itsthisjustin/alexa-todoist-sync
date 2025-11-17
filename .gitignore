@@ -139,3 +139,11 @@ dist
 config.json
 cookies.json
 sync-state.json
+
+# Wrangler configuration (contains account-specific IDs)
+wrangler.toml
+.wrangler/
+
+# Local development files
+.DS_Store
+*.local

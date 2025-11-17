@@ -51,6 +51,8 @@ export interface UserConfig {
   // Todoist → Alexa is instant via webhooks (no interval needed)
   isActive: boolean;
   lastAlexaToTodoistSync?: string;
+  // Track synced items to avoid duplicates (like macOS app)
+  syncedItems?: { [itemName: string]: string }; // itemName -> todoistTaskId
 }
 
 export interface SyncJob {
