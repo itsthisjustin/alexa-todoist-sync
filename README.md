@@ -12,12 +12,13 @@ Serverless, fully-managed solution with Todoist OAuth webhooks for instant synci
 **Best for:** Anyone who wants a fully-automated, maintenance-free solution
 
 **Features:**
-- ✅ **Instant sync** via Todoist webhooks (no polling!)
+- ✅ **Near-instant sync** via Todoist webhooks (queued with intelligent batching)
 - ✅ **No server required** - runs entirely on Cloudflare
 - ✅ **Todoist OAuth** - secure token-based authentication
 - ✅ **Stripe integration** - optional paid tiers
 - ✅ **Scalable** - handles thousands of users automatically
 - ✅ **Always on** - 24/7 operation with zero maintenance
+- ✅ **Efficient batching** - multiple completions processed in one browser session
 
 **Note:** Cloudflare deployment documentation is available in the `cloudflare/` directory. Check the code and configuration files for setup instructions.
 
@@ -81,13 +82,14 @@ Supports Ubuntu, Debian, Amazon Linux, RHEL, and CentOS. The script will install
 
 - ✅ **Bidirectional sync**
   - Alexa → Todoist: New items synced every 5 minutes
-  - Todoist → Alexa: Completed tasks marked complete (configurable, default: every 24 hours)
-- 🔄 **Smart tracking**: Re-add completed items and they'll sync again
+  - Todoist → Alexa (Cloudflare): Completed tasks marked complete via webhooks (within 30 seconds)
+  - Todoist → Alexa (macOS/Windows/Cloud): Completed tasks marked complete (configurable, default: every 24 hours)
+- 🔄 **Smart tracking**: Re-add completed items and they'll sync again (uses `completedOnAlexa` flag)
 - 🍪 **Persistent sessions**: Maintains login with saved cookies
 - 🔐 **2FA support**: Works with Amazon's two-factor authentication
 - 📊 **Detailed logging**: Timestamps and status for every operation
-- 🧪 **Dry-run mode**: Test without actually syncing
-- ⚡ **Optimized**: Configurable polling intervals to minimize API usage
+- 🧪 **Dry-run mode**: Test without actually syncing (macOS/Windows/Cloud only)
+- ⚡ **Optimized batching**: Multiple webhook completions processed in one browser session (Cloudflare)
 
 ## 🚀 Quick Start
 
@@ -199,11 +201,12 @@ Alexa Shopping List  ──────→  Todoist Project
          (Completed items sync back)
 ```
 
-### Cloudflare (Webhook-based - Instant)
+### Cloudflare (Webhook-based - Near-Instant)
 1. **New items**: Added to Alexa Shopping List → Checked every 5 minutes → Automatically appear in Todoist
-2. **Completed tasks**: Checked off in Todoist → **Instant webhook** → Marked complete in Alexa immediately
+2. **Completed tasks**: Checked off in Todoist → **Webhook queued** → Marked complete in Alexa (within 30 seconds, batched per user)
 3. **Re-added items**: Items you complete and re-add to Alexa will sync again
 4. **Authentication**: Uses Todoist OAuth for secure, token-based auth (no API tokens to manage)
+5. **Intelligent batching**: Multiple items completed quickly are processed in one browser session for efficiency
 
 ### macOS / Windows / Cloud (Polling-based)
 1. **New items**: Added to Alexa Shopping List → Checked every 5 minutes → Automatically appear in Todoist
