@@ -136,7 +136,6 @@ The easiest way to get started is with the Cloudflare Workers deployment:
    ```
 
 7. **Set up Todoist OAuth** (optional but recommended)
-   - Follow [TODOIST_OAUTH_SETUP.md](./cloudflare/TODOIST_OAUTH_SETUP.md)
    - Set the client ID and secret:
      ```bash
      wrangler secret put TODOIST_CLIENT_ID
@@ -144,7 +143,6 @@ The easiest way to get started is with the Cloudflare Workers deployment:
      ```
 
 8. **Set up Stripe** (optional - for paid tiers)
-   - Follow [STRIPE_SETUP.md](./cloudflare/STRIPE_SETUP.md)
    - Set the keys:
      ```bash
      wrangler secret put STRIPE_SECRET_KEY
@@ -253,32 +251,6 @@ All platforms use the same `config.json` format:
 | `checkIntervalMinutes` | How often the script runs (via scheduler) | `5` |
 | `todoistCheckIntervalHours` | How often to check Todoist for completed tasks | `24` |
 | `stateFile` | Where to store sync state | `"sync-state.json"` |
-
-## 📁 Project Structure
-
-```
-alexa-todoist-sync/
-├── cloudflare/            # Cloudflare Workers (serverless, recommended)
-│   ├── README.md          # Cloudflare deployment guide
-│   ├── frontend/          # Static frontend (HTML/JS)
-│   ├── workers/           # Worker scripts
-│   ├── shared/            # Shared types and utilities
-│   ├── wrangler.toml.example  # Cloudflare configuration template
-│   └── package.json       # Dependencies
-├── mac/                   # macOS-specific files (tested)
-│   ├── install.sh         # macOS installation script
-│   └── com.alexassync.plist  # LaunchDaemon configuration
-├── windows/               # Windows-specific files (untested)
-│   └── install.ps1        # Windows installation script
-├── cloud/                 # Cloud/EC2 deployment files (untested)
-│   └── install.sh         # Linux installation script
-├── shared/                # Shared files for local deployments
-│   ├── sync.js            # Main sync script
-│   └── config.json.template  # Configuration template
-├── package.json           # Node.js dependencies
-├── .gitignore            # Git ignore rules
-└── README.md             # This file
-```
 
 ## 🛠️ Manual Usage
 
