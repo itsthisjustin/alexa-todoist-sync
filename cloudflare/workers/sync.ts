@@ -81,21 +81,36 @@ async function syncToTodoist(
   items: string[],
   todoistToken: string,
   todoistProjectId: string,
-  syncedItems: { [itemName: string]: string }
-): Promise<{ [itemName: string]: string }> {
+  syncedItems: { [itemName: string]: { todoistId: string; completedOnAlexa: boolean } }
+): Promise<{ [itemName: string]: { todoistId: string; completedOnAlexa: boolean } }> {
   console.log(`Syncing ${items.length} items to Todoist`);
 
   const updatedSyncedItems = { ...syncedItems };
   let added = 0;
 
-  // Add new items that aren't in our synced state
-  for (const item of items) {
+  // Filter for items that need to be synced
+  const newItems = items.filter(item => {
     const itemLower = item.toLowerCase();
 
-    if (updatedSyncedItems[itemLower]) {
-      console.log(`Skipping already synced: ${item}`);
-      continue;
-    }
+    // If item doesn't exist in state, it's new
+    if (!updatedSyncedItems[itemLower]) return true;
+
+    // If item was completed on Alexa, it's been re-added - treat as new
+    if (updatedSyncedItems[itemLower].completedOnAlexa) return true;
+
+    // Otherwise it's already synced and active
+    return false;
+  });
+
+  if (newItems.length === 0) {
+    console.log('No new items to sync');
+    return updatedSyncedItems;
+  }
+
+  // Add new items to Todoist
+  for (const item of newItems) {
+    const itemLower = item.toLowerCase();
+    const isReAdded = updatedSyncedItems[itemLower]?.completedOnAlexa;
 
     const response = await fetch('https://api.todoist.com/rest/v2/tasks', {
       method: 'POST',
@@ -111,9 +126,17 @@ async function syncToTodoist(
 
     if (response.ok) {
       const task = await response.json() as { id: string };
-      updatedSyncedItems[itemLower] = task.id;
+      updatedSyncedItems[itemLower] = {
+        todoistId: task.id,
+        completedOnAlexa: false
+      };
       added++;
-      console.log(`Added: ${item} (task ${task.id})`);
+
+      if (isReAdded) {
+        console.log(`Re-synced (re-added item): ${item} (task ${task.id})`);
+      } else {
+        console.log(`Added: ${item} (task ${task.id})`);
+      }
     } else {
       console.error(`Failed to add: ${item}`);
     }

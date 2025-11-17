@@ -63,7 +63,19 @@ export async function handleTodoistWebhook(c: Context<{ Bindings: Env }>) {
 
     // Mark the completed item as complete on Amazon Alexa shopping list
     console.log(`Starting to mark "${itemContent}" complete on Alexa list`);
-    await markItemCompleteOnAlexa(itemContent, config, c.env);
+    const success = await markItemCompleteOnAlexa(itemContent, config, c.env);
+
+    if (success) {
+      // Update syncedItems to mark this item as completed on Alexa
+      const itemLower = itemContent.toLowerCase();
+      if (!config.syncedItems) config.syncedItems = {};
+
+      if (config.syncedItems[itemLower]) {
+        config.syncedItems[itemLower].completedOnAlexa = true;
+        await c.env.USERS.put(`config:${userId}`, JSON.stringify(config));
+        console.log(`Updated state: "${itemContent}" marked as completedOnAlexa`);
+      }
+    }
 
     console.log(`Marked "${itemContent}" complete on Alexa list for user ${userId}`);
 
@@ -122,7 +134,7 @@ async function markItemCompleteOnAlexa(
   itemName: string,
   config: UserConfig,
   env: Env
-): Promise<void> {
+): Promise<boolean> {
   console.log(`markItemCompleteOnAlexa called for item: "${itemName}"`);
 
   if (!config.amazonSession) {
@@ -265,6 +277,7 @@ async function markItemCompleteOnAlexa(
       // Wait for the action to complete
       await page.waitForTimeout(1000);
       console.log(`Successfully marked "${itemName}" complete on Alexa list`);
+      return true;
     } else {
       console.log(`Could not find item to mark complete: ${itemName}`);
       if (result.error) {
@@ -275,6 +288,7 @@ async function markItemCompleteOnAlexa(
       } else {
         console.log(`No items found on page`);
       }
+      return false;
     }
   } finally {
     console.log(`Closing browser`);

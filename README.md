@@ -154,7 +154,13 @@ The easiest way to get started is with the Cloudflare Workers deployment:
    wrangler deploy
    ```
 
-10. **Deploy frontend**
+10. **Add queue consumer** (required due to wrangler limitation)
+    ```bash
+    wrangler queues consumer add alexa-todoist-sync-queue alexa-todoist-sync --batch-size 10 --message-retries 3 --batch-timeout 30
+    ```
+    Note: The queue consumer configuration in `wrangler.toml` doesn't always apply correctly during deployment, so it must be added manually via CLI after deployment.
+
+11. **Deploy frontend**
     - Update `API_URL` in `frontend/index.html` with your Worker URL
     - Deploy to Cloudflare Pages:
       ```bash

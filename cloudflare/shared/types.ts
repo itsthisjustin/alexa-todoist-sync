@@ -52,7 +52,7 @@ export interface UserConfig {
   isActive: boolean;
   lastAlexaToTodoistSync?: string;
   // Track synced items to avoid duplicates (like macOS app)
-  syncedItems?: { [itemName: string]: string }; // itemName -> todoistTaskId
+  syncedItems?: { [itemName: string]: { todoistId: string; completedOnAlexa: boolean } };
 }
 
 export interface SyncJob {
