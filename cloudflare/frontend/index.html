@@ -568,7 +568,16 @@ welcome.</pre>
       const password = document.getElementById('amazon-password').value;
       const tfaCode = document.getElementById('amazon-2fa-code')?.value || undefined;
 
-      document.getElementById('amazon-loading').classList.remove('hidden');
+      const loadingEl = document.getElementById('amazon-loading');
+
+      // Show appropriate loading message
+      if (tfaCode) {
+        loadingEl.innerHTML = '<p class="font-mono">verifying 2fa code and logging in... this might take a bit longer.</p>';
+      } else {
+        loadingEl.innerHTML = '<p class="font-mono">logging in to amazon... this may take 30-60 seconds.</p>';
+      }
+
+      loadingEl.classList.remove('hidden');
       document.getElementById('amazon-error').classList.add('hidden');
 
       try {
@@ -581,7 +590,7 @@ welcome.</pre>
         if (result.needs2FA) {
           document.getElementById('amazon-2fa-container').classList.remove('hidden');
           document.getElementById('amazon-submit-btn').textContent = 'Submit 2FA Code';
-          document.getElementById('amazon-loading').classList.add('hidden');
+          loadingEl.classList.add('hidden');
           toast('Please enter your 2FA code', 'info');
           document.getElementById('amazon-2fa-code').focus();
           return;
@@ -589,12 +598,18 @@ welcome.</pre>
 
         await loadConfig();
         renderDashboard();
-        toast('Amazon connected successfully!', 'success');
+
+        // Show appropriate success message
+        if (result.used2FA) {
+          toast('Amazon connected successfully with 2FA!', 'success');
+        } else {
+          toast('Amazon connected successfully!', 'success');
+        }
       } catch (error) {
         document.getElementById('amazon-error').textContent = error.message;
         document.getElementById('amazon-error').classList.remove('hidden');
       } finally {
-        document.getElementById('amazon-loading').classList.add('hidden');
+        loadingEl.classList.add('hidden');
       }
     };
 

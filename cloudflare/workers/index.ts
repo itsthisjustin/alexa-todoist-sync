@@ -217,7 +217,10 @@ app.post('/api/config/amazon', async (c) => {
       await c.env.SYNC_QUEUE.send({ userId: payload.userId, jobType: 'alexa-to-todoist' } as SyncJob);
     }
 
-    return c.json({ success: true });
+    return c.json({
+      success: true,
+      used2FA: !!tfaCode // Indicate if 2FA was used so frontend can show appropriate message
+    });
   } catch (error: any) {
     console.error('Amazon login error:', error);
 
