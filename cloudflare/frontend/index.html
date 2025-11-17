@@ -212,6 +212,29 @@ welcome.</pre>
           </div>
 
           <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+            <!-- Error Alert -->
+            ${config?.lastSyncError ? `
+              <div class="bg-red-50 border-2 border-red-200 rounded p-4">
+                <div class="flex items-start gap-3">
+                  <svg class="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                  </svg>
+                  <div class="flex-1">
+                    <h3 class="font-mono font-bold text-red-900 mb-1">sync error</h3>
+                    <p class="text-sm text-red-800 font-mono mb-2">${config.lastSyncError}</p>
+                    <p class="text-xs text-red-700 font-mono">
+                      occurred at ${new Date(config.lastSyncErrorTime).toLocaleString()}
+                    </p>
+                    ${config.lastSyncError.includes('Amazon session expired') ? `
+                      <button onclick="handleAmazonReconnect()" class="mt-3 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm font-mono">
+                        reconnect amazon account
+                      </button>
+                    ` : ''}
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+
             <!-- Status Card -->
             <div class="bg-white border border-gray-200 rounded p-6">
               <div class="flex justify-between items-center mb-4">
@@ -475,6 +498,9 @@ welcome.</pre>
       }
     };
 
+    // Alias for reconnecting Amazon from error banner
+    window.handleAmazonReconnect = window.handleAmazonDisconnect;
+
     window.handleDeleteAccount = async () => {
       const confirmed = confirm('⚠️ WARNING: This will permanently delete your configuration here and all data. This cannot be undone.\n\nAre you absolutely sure you want to delete?');
       if (!confirmed) {
@@ -601,9 +627,9 @@ welcome.</pre>
 
         // Show appropriate success message
         if (result.used2FA) {
-          toast('Amazon connected successfully with 2FA!', 'success');
+          toast('Amazon connected successfully with 2FA! Starting sync...', 'success');
         } else {
-          toast('Amazon connected successfully!', 'success');
+          toast('Amazon connected successfully! Starting sync...', 'success');
         }
       } catch (error) {
         document.getElementById('amazon-error').textContent = error.message;

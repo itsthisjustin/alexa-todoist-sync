@@ -145,6 +145,8 @@ app.get('/api/config', async (c) => {
     alexaToTodoistInterval: config.alexaToTodoistInterval,
     isActive: config.isActive,
     lastAlexaToTodoistSync: config.lastAlexaToTodoistSync,
+    lastSyncError: config.lastSyncError,
+    lastSyncErrorTime: config.lastSyncErrorTime,
     subscriptionTier: user?.subscriptionTier || 'free',
   });
 });
@@ -209,11 +211,16 @@ app.post('/api/config/amazon', async (c) => {
     config.amazonSession = amazonSession;
     config.isActive = true; // Activate syncing once both are configured
 
+    // Clear any previous error state since we just got a fresh session
+    delete config.lastSyncError;
+    delete config.lastSyncErrorTime;
+
     await c.env.USERS.put(`config:${payload.userId}`, JSON.stringify(config));
 
-    // Enqueue first Alexa → Todoist sync
-    // Todoist → Alexa is handled via webhooks (instant)
+    // Always enqueue immediate sync after reconnecting Amazon
+    // This tests the session and clears error state on frontend
     if (config.todoist) {
+      console.log(`Triggering immediate sync for user ${payload.userId} after Amazon reconnect`);
       await c.env.SYNC_QUEUE.send({ userId: payload.userId, jobType: 'alexa-to-todoist' } as SyncJob);
     }
 
@@ -543,9 +550,35 @@ export default {
       try {
         console.log(`Processing alexa-to-todoist for user ${userId}`);
         await performSync(userId, env);
+
+        // Clear any previous error on successful sync
+        const configData = await env.USERS.get(`config:${userId}`);
+        if (configData) {
+          const config: UserConfig = JSON.parse(configData);
+          if (config.lastSyncError) {
+            delete config.lastSyncError;
+            delete config.lastSyncErrorTime;
+            await env.USERS.put(`config:${userId}`, JSON.stringify(config));
+          }
+        }
+
         message.ack();
-      } catch (error) {
+      } catch (error: any) {
         console.error(`alexa-to-todoist error for user ${userId}:`, error);
+
+        // Store the error in user config
+        try {
+          const configData = await env.USERS.get(`config:${userId}`);
+          if (configData) {
+            const config: UserConfig = JSON.parse(configData);
+            config.lastSyncError = error.message || 'Unknown sync error';
+            config.lastSyncErrorTime = new Date().toISOString();
+            await env.USERS.put(`config:${userId}`, JSON.stringify(config));
+          }
+        } catch (saveError) {
+          console.error(`Failed to save error state for user ${userId}:`, saveError);
+        }
+
         message.retry();
       } finally {
         await env.USERS.delete(`sync_in_progress:${userId}`);

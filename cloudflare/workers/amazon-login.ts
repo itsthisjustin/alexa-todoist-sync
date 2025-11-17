@@ -217,7 +217,33 @@ export async function loginToAmazon(
 
     console.log(`Extracted ${cookies.length} cookies`);
 
-    return cookies;
+    // Fix session cookies (expires: -1) by giving them a 1-year expiry
+    // This prevents them from being treated as browser-session-only
+    const oneYearFromNow = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
+    const fixedCookies = cookies.map(cookie => {
+      // If cookie has no expiry or expires is -1, set it to 1 year from now
+      if (!cookie.expires || cookie.expires === -1) {
+        return { ...cookie, expires: oneYearFromNow };
+      }
+      return cookie;
+    });
+
+    // Log important session cookies for debugging
+    const sessionCookies = fixedCookies.filter(c =>
+      c.name.includes('session') ||
+      c.name.includes('ubid') ||
+      c.name.includes('x-main') ||
+      c.name.includes('at-main')
+    );
+    console.log('Important cookies:', sessionCookies.map(c => ({
+      name: c.name,
+      domain: c.domain,
+      expires: c.expires ? new Date(c.expires * 1000).toISOString() : 'session',
+      httpOnly: c.httpOnly,
+      secure: c.secure
+    })));
+
+    return fixedCookies;
   } finally {
     await browser.close();
   }

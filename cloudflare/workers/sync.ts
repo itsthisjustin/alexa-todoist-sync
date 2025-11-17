@@ -1,14 +1,15 @@
 import puppeteer from '@cloudflare/puppeteer';
 import type { Env, UserConfig, AmazonSession } from '../shared/types';
-import { decrypt } from '../shared/crypto';
+import { decrypt, encrypt } from '../shared/crypto';
 
 /**
  * Scrape Amazon shopping list items
+ * Returns both items and refreshed cookies
  */
 async function scrapeAmazonShoppingList(
   amazonSession: AmazonSession,
   browserBinding: Fetcher
-): Promise<string[]> {
+): Promise<{ items: string[], refreshedCookies: any[] }> {
   console.log('Scraping Amazon shopping list');
 
   const browser = await puppeteer.launch(browserBinding);
@@ -68,7 +69,11 @@ async function scrapeAmazonShoppingList(
 
     console.log(`Found ${items.length} items on shopping list`);
 
-    return items;
+    // Get refreshed cookies after successful interaction
+    const refreshedCookies = await page.cookies();
+    console.log(`Refreshed ${refreshedCookies.length} cookies after successful Amazon access`);
+
+    return { items, refreshedCookies };
   } finally {
     await browser.close();
   }
@@ -335,7 +340,7 @@ export async function performSync(
   const amazonSession: AmazonSession = JSON.parse(decryptedData);
 
   // Scrape Amazon and push to Todoist
-  const items = await scrapeAmazonShoppingList(amazonSession, env.BROWSER);
+  const { items, refreshedCookies } = await scrapeAmazonShoppingList(amazonSession, env.BROWSER);
 
   if (items.length > 0) {
     // Use local state tracking instead of fetching all Todoist tasks
@@ -351,6 +356,22 @@ export async function performSync(
 
   // Update last sync time
   config.lastAlexaToTodoistSync = new Date().toISOString();
+
+  // CRITICAL: Save refreshed cookies to extend session life
+  // Amazon refreshes cookies on each request, so we need to save them back
+  if (config.amazonSession && refreshedCookies.length > 0) {
+    console.log('Updating stored cookies with refreshed session');
+    config.amazonSession.cookies = refreshedCookies;
+    config.amazonSession.encryptedAt = new Date().toISOString();
+
+    // Re-encrypt and store updated session
+    const updatedSession = {
+      cookies: refreshedCookies,
+      encryptedAt: new Date().toISOString(),
+    };
+    const encrypted = await encrypt(JSON.stringify(updatedSession), env.ENCRYPTION_KEY);
+    await env.SESSIONS.put(`amazon:${userId}`, encrypted);
+  }
 
   await env.USERS.put(`config:${userId}`, JSON.stringify(config));
 
