@@ -183,11 +183,11 @@ app.post('/api/config/amazon', async (c) => {
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
-  const { email, password } = await c.req.json();
+  const { email, password, tfaCode } = await c.req.json();
 
   try {
     // Login to Amazon and get session cookies
-    const cookies = await loginToAmazon(email, password, c.env.BROWSER);
+    const cookies = await loginToAmazon(email, password, c.env.BROWSER, tfaCode);
 
     // Encrypt and store session
     const amazonSession = {
@@ -220,6 +220,12 @@ app.post('/api/config/amazon', async (c) => {
     return c.json({ success: true });
   } catch (error: any) {
     console.error('Amazon login error:', error);
+
+    // Special handling for 2FA required
+    if (error.message === '2FA_REQUIRED') {
+      return c.json({ needs2FA: true, message: 'Two-factor authentication code required' }, 200);
+    }
+
     return c.json({ error: error.message || 'Failed to login to Amazon' }, 500);
   }
 });

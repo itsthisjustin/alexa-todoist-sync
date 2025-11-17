@@ -8,6 +8,7 @@
 </head>
 <body class="bg-gray-50">
   <div id="app"></div>
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
   <script type="module">
     const API_URL = 'https://app.alexatodoist.com'; // Worker API endpoint
@@ -16,6 +17,44 @@
     let token = localStorage.getItem('token');
     let user = null;
     let config = null;
+
+    // Toast notification system
+    function toast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+
+      const colors = {
+        success: 'bg-green-600',
+        error: 'bg-red-600',
+        info: 'bg-indigo-600',
+        warning: 'bg-yellow-600'
+      };
+
+      toast.className = `${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg max-w-sm transform transition-all duration-300 ease-in-out opacity-0 translate-x-4`;
+      toast.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="flex-1">${message}</div>
+          <button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-200">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      container.appendChild(toast);
+
+      // Animate in
+      setTimeout(() => {
+        toast.classList.remove('opacity-0', 'translate-x-4');
+      }, 10);
+
+      // Auto dismiss after 5 seconds
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-x-4');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
 
     // Helper functions
     async function api(endpoint, options = {}) {
@@ -134,7 +173,7 @@
             </div>
           </div>
 
-          <div class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+          <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
             <!-- Status Card -->
             <div class="bg-white rounded-lg shadow p-6">
               <h2 class="text-lg font-semibold mb-4">Sync Status</h2>
@@ -163,131 +202,109 @@
                   Last Amazon→Todoist sync: ${new Date(config.lastAlexaToTodoistSync).toLocaleString()}
                 </p>
               ` : ''}
-            ${config?.lastTodoistToAlexaSync ? `
-                <p class="text-sm text-gray-600">
-                  Last Todoist→Amazon sync: ${new Date(config.lastTodoistToAlexaSync).toLocaleString()}
-                </p>
-              ` : ''}
             </div>
 
-            <!-- Subscription Tier -->
+            <!-- Configuration Cards Grid -->
+            <div class="grid md:grid-cols-2 gap-6">
+              <!-- Todoist Setup -->
+              <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center gap-3 mb-4">
+                  <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M21.5 7.5l-9 9-4.5-4.5L6.5 10.5 12.5 16.5 23 6z"/>
+                    </svg>
+                  </div>
+                  <h2 class="text-lg font-semibold">Todoist</h2>
+                </div>
+                ${hasTodoist ? `
+                  <div class="p-4 bg-green-50 border border-green-200 rounded-lg mb-3">
+                    <p class="text-sm text-green-800 font-medium">✓ Connected with instant webhook sync</p>
+                    <p class="text-xs text-green-700 mt-1">Items completed in Todoist instantly sync to Alexa</p>
+                  </div>
+                  <button onclick="toast('Disconnect feature coming soon', 'info')" class="text-sm text-gray-600 hover:text-gray-900">
+                    Disconnect
+                  </button>
+                ` : `
+                  <p class="text-sm text-gray-600 mb-4">
+                    Connect your Todoist account to sync your Alexa shopping list.
+                  </p>
+                  <div id="todoist-error" class="text-red-600 text-sm mb-4 hidden"></div>
+                  <button onclick="handleTodoistConnect()" class="w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-medium">
+                    Connect Todoist
+                  </button>
+                `}
+              </div>
+
+              <!-- Amazon Setup -->
+              <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center gap-3 mb-4">
+                  <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M.045 18.02c.072-.116.187-.124.348-.022 3.636 2.11 7.594 3.166 11.87 3.166 2.852 0 6.017-.587 9.488-1.757.101-.034.218-.05.303-.013.084.037.124.11.138.212.013.102.012.165-.096.25-3.762 2.773-8.138 4.152-13.125 4.152-4.157 0-7.937-1.138-11.34-3.413-.142-.093-.178-.21-.165-.31.013-.098.043-.171.145-.243l.002-.002c.1-.068.235-.095.432-.02zm1.009-1.483c-.083-.116-.013-.27.164-.27h.42c.118 0 .224.05.302.135l6.41 7.218c.077.084.183.135.3.135h3.015c.177 0 .247-.154.164-.27l-4.962-6.93 5.21-6.988c.083-.116.013-.27-.165-.27h-2.993c-.118 0-.224.05-.302.135L3.367 16.42c-.078.084-.184.135-.302.135H.42c-.177 0-.247.154-.164.27l5.798 8.066zm22.209-5.158c-.863-1.088-2.254-1.633-4.173-1.633-1.92 0-3.31.545-4.174 1.633-.863 1.088-1.295 2.63-1.295 4.626 0 1.997.432 3.54 1.295 4.627.864 1.088 2.254 1.632 4.174 1.632 1.919 0 3.31-.544 4.173-1.632.863-1.088 1.295-2.63 1.295-4.627 0-1.997-.432-3.538-1.295-4.626z"/>
+                    </svg>
+                  </div>
+                  <h2 class="text-lg font-semibold">Amazon Alexa</h2>
+                </div>
+                ${hasAmazon ? `
+                  <div class="p-4 bg-green-50 border border-green-200 rounded-lg mb-3">
+                    <p class="text-sm text-green-800 font-medium">✓ Session active</p>
+                    <p class="text-xs text-green-700 mt-1">Your Alexa shopping list is syncing</p>
+                  </div>
+                  <button onclick="toast('Reconnect feature coming soon', 'info')" class="text-sm text-indigo-600 hover:text-indigo-700 font-medium">
+                    Reconnect Amazon
+                  </button>
+                ` : `
+                  <p class="text-sm text-gray-600 mb-4">
+                    We'll securely save your Amazon session. <strong>Passwords are never stored</strong> - only encrypted cookies.
+                  </p>
+                  <form onsubmit="handleAmazonLogin(event)" class="space-y-3">
+                    <input type="email" id="amazon-email" placeholder="Amazon Email" required
+                      class="w-full px-4 py-2 border rounded-lg">
+                    <input type="password" id="amazon-password" placeholder="Amazon Password" required
+                      class="w-full px-4 py-2 border rounded-lg">
+                    <div id="amazon-2fa-container" class="hidden">
+                      <input type="text" id="amazon-2fa-code" placeholder="Enter 2FA Code"
+                        class="w-full px-4 py-2 border rounded-lg" maxlength="6">
+                      <p class="text-xs text-gray-600 mt-1">Enter the 6-digit code from your authenticator app or SMS</p>
+                    </div>
+                    <div id="amazon-error" class="text-red-600 text-sm hidden"></div>
+                    <div id="amazon-loading" class="text-indigo-600 hidden">
+                      <p>Logging in to Amazon... This may take 10-20 seconds.</p>
+                    </div>
+                    <button type="submit" id="amazon-submit-btn" class="w-full bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 font-medium">
+                      Connect Amazon
+                    </button>
+                  </form>
+                `}
+              </div>
+            </div>
+
+            <!-- Subscription Plans -->
             <div class="bg-white rounded-lg shadow p-6">
-              <h2 class="text-lg font-semibold mb-4">Subscription: ${tier.charAt(0).toUpperCase() + tier.slice(1)}</h2>
-              <div class="grid grid-cols-3 gap-4 mb-6">
+              <h2 class="text-lg font-semibold mb-4">Subscription Plans</h2>
+              <div class="grid md:grid-cols-3 gap-4">
                 ${Object.entries(pricingTiers).map(([key, t]) => `
-                  <div class="border-2 ${key === tier ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200'} rounded-lg p-4">
-                    <h3 class="font-semibold text-lg">${t.name}</h3>
-                    <p class="text-2xl font-bold text-indigo-600 mb-2">
-                      ${t.price === 0 ? 'Free' : '$' + t.price + '/mo'}
+                  <div class="border-2 ${key === tier ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200'} rounded-lg p-4 relative">
+                    ${key === tier ? '<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-medium">Current</div>' : ''}
+                    <h3 class="font-semibold text-lg mt-2">${t.name}</h3>
+                    <p class="text-3xl font-bold text-indigo-600 my-3">
+                      ${t.price === 0 ? 'Free' : '$' + t.price}<span class="text-sm text-gray-600 font-normal">/mo</span>
                     </p>
-                    <ul class="text-sm space-y-1">
-                      ${t.features.map(f => `<li>• ${f}</li>`).join('')}
+                    <ul class="text-sm space-y-2 mb-4">
+                      ${t.features.map(f => `<li class="flex items-start gap-2"><svg class="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg><span>${f}</span></li>`).join('')}
                     </ul>
                     ${key !== tier && key !== 'free' ? `
-                      <button onclick="handleUpgrade('${key}')" class="mt-4 w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 text-sm">
-                        Upgrade
+                      <button onclick="handleUpgrade('${key}')" class="mt-2 w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium">
+                        Upgrade to ${t.name}
                       </button>
                     ` : key === tier ? `
-                      <div class="mt-4 text-center text-sm text-green-600 font-semibold">Current Plan</div>
-                    ` : ''}
+                      <div class="mt-2 w-full text-center py-2 text-sm text-gray-500">Your current plan</div>
+                    ` : `
+                      <div class="mt-2 w-full text-center py-2 text-sm text-gray-500">—</div>
+                    `}
                   </div>
                 `).join('')}
               </div>
-            </div>
-
-            <!-- Sync Intervals -->
-            ${hasAmazon && hasTodoist ? `
-              <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-lg font-semibold mb-4">Sync Settings</h2>
-                <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <p class="text-sm text-green-800">
-                    ✓ <strong>Todoist → Alexa:</strong> Instant sync via webhooks (all tiers)
-                  </p>
-                  <p class="text-xs text-green-700 mt-1">
-                    Items completed in Todoist are instantly removed from your Alexa shopping list
-                  </p>
-                </div>
-                <p class="text-sm text-gray-600 mb-4">
-                  Configure how often to check Alexa for new items. Faster intervals require a paid plan.
-                </p>
-                <form onsubmit="handleUpdateIntervals(event)" class="space-y-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                      Alexa → Todoist (check for new Alexa items)
-                    </label>
-                    <select id="alexa-interval" class="w-full px-4 py-2 border rounded-lg">
-                      <option value="5" ${config.alexaToTodoistInterval === 5 ? 'selected' : ''}>Every 5 minutes (Faster - $5/mo)</option>
-                      <option value="30" ${config.alexaToTodoistInterval === 30 ? 'selected' : ''}>Every 30 minutes (Fast - $1.99/mo)</option>
-                      <option value="60" ${config.alexaToTodoistInterval === 60 ? 'selected' : ''}>Every hour (Free)</option>
-                    </select>
-                    <p class="mt-1 text-xs text-gray-500">
-                      Current: Every ${config.alexaToTodoistInterval} minutes
-                    </p>
-                  </div>
-
-                  <div id="interval-error" class="text-red-600 text-sm hidden"></div>
-
-                  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
-                    Update Interval
-                  </button>
-                </form>
-              </div>
-            ` : ''}
-          </div>
-
-            <!-- Todoist Setup -->
-            <div class="bg-white rounded-lg shadow p-6">
-              <h2 class="text-lg font-semibold mb-4">Todoist Configuration</h2>
-              ${hasTodoist ? `
-                <p class="text-green-600 mb-4">✓ Todoist connected with instant webhook sync</p>
-                <p class="text-sm text-gray-600">Complete items in Todoist and they'll instantly disappear from your Alexa shopping list!</p>
-              ` : `
-                <p class="text-sm text-gray-600 mb-4">
-                  Connect your Todoist account to sync your Alexa shopping list. We'll ask you to choose which project to use.
-                </p>
-                <div id="todoist-error" class="text-red-600 text-sm mb-4 hidden"></div>
-                <button onclick="handleTodoistConnect()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
-                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M21.5 7.5l-9 9-4.5-4.5L6.5 10.5 12.5 16.5 23 6z"/>
-                  </svg>
-                  Connect Todoist
-                </button>
-                <p class="mt-2 text-sm text-gray-600">
-                  Get your API token from
-                  <a href="https://todoist.com/prefs/integrations" target="_blank" class="text-indigo-600">
-                    Todoist Settings → Integrations
-                  </a>
-                </p>
-              `}
-            </div>
-
-            <!-- Amazon Setup -->
-            <div class="bg-white rounded-lg shadow p-6">
-              <h2 class="text-lg font-semibold mb-4">Amazon Configuration</h2>
-              ${hasAmazon ? `
-                <p class="text-green-600 mb-4">✓ Amazon session active</p>
-                <button onclick="showAmazonLogin()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
-                  Reconnect Amazon
-                </button>
-              ` : `
-                <form onsubmit="handleAmazonLogin(event)" class="space-y-4">
-                  <p class="text-sm text-gray-600 mb-4">
-                    We'll use Cloudflare Puppeteer to login once and save your session.
-                    <strong>Your password is never stored</strong> - only encrypted cookies.
-                  </p>
-                  <input type="email" id="amazon-email" placeholder="Amazon Email" required
-                    class="w-full px-4 py-2 border rounded-lg">
-                  <input type="password" id="amazon-password" placeholder="Amazon Password" required
-                    class="w-full px-4 py-2 border rounded-lg">
-                  <div id="amazon-error" class="text-red-600 text-sm hidden"></div>
-                  <div id="amazon-loading" class="text-indigo-600 hidden">
-                    <p>Logging in to Amazon... This may take 10-20 seconds.</p>
-                  </div>
-                  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
-                    Connect Amazon
-                  </button>
-                </form>
-              `}
             </div>
           </div>
         </div>
@@ -388,18 +405,30 @@
       e.preventDefault();
       const email = document.getElementById('amazon-email').value;
       const password = document.getElementById('amazon-password').value;
+      const tfaCode = document.getElementById('amazon-2fa-code')?.value || undefined;
 
       document.getElementById('amazon-loading').classList.remove('hidden');
       document.getElementById('amazon-error').classList.add('hidden');
 
       try {
-        await api('/api/config/amazon', {
+        const result = await api('/api/config/amazon', {
           method: 'POST',
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, password, tfaCode }),
         });
+
+        // Check if 2FA is required
+        if (result.needs2FA) {
+          document.getElementById('amazon-2fa-container').classList.remove('hidden');
+          document.getElementById('amazon-submit-btn').textContent = 'Submit 2FA Code';
+          document.getElementById('amazon-loading').classList.add('hidden');
+          toast('Please enter your 2FA code', 'info');
+          document.getElementById('amazon-2fa-code').focus();
+          return;
+        }
 
         await loadConfig();
         renderDashboard();
+        toast('Amazon connected successfully!', 'success');
       } catch (error) {
         document.getElementById('amazon-error').textContent = error.message;
         document.getElementById('amazon-error').classList.remove('hidden');
@@ -424,7 +453,7 @@
 
         await loadConfig();
         renderDashboard();
-        alert('Interval updated successfully!');
+        toast('Interval updated successfully!', 'success');
       } catch (error) {
         document.getElementById('interval-error').textContent = error.message;
         document.getElementById('interval-error').classList.remove('hidden');
@@ -441,7 +470,7 @@
         // Redirect to Stripe Checkout
         window.location.href = response.url;
       } catch (error) {
-        alert('Failed to start checkout: ' + error.message);
+        toast('Failed to start checkout: ' + error.message, 'error');
       }
     };
 
@@ -476,7 +505,7 @@
         `;
         document.body.appendChild(modal);
       } catch (error) {
-        alert('Failed to load projects: ' + error.message);
+        toast('Failed to load projects: ' + error.message, 'error');
         await loadConfig();
         renderDashboard();
       }
@@ -492,9 +521,9 @@
         closeProjectModal();
         await loadConfig();
         renderDashboard();
-        alert(`Connected to Todoist project "${projectName}"! Webhooks are active for instant sync.`);
+        toast(`Connected to Todoist project "${projectName}"! Webhooks are active for instant sync.`, 'success');
       } catch (error) {
-        alert('Failed to complete setup: ' + error.message);
+        toast('Failed to complete setup: ' + error.message, 'error');
       }
     };
 
@@ -517,7 +546,7 @@
             // Show project selection
             await showProjectSelection();
           } else if (urlParams.get('error')) {
-            alert('Authentication error: ' + urlParams.get('error'));
+            toast('Authentication error: ' + urlParams.get('error'), 'error');
             window.history.replaceState({}, '', '/dashboard');
           }
 
