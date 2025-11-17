@@ -6,7 +6,8 @@ import puppeteer from '@cloudflare/puppeteer';
 export async function loginToAmazon(
   email: string,
   password: string,
-  browserBinding: Fetcher
+  browserBinding: Fetcher,
+  tfaCode?: string
 ): Promise<Array<any>> {
   console.log(`Logging in to Amazon for ${email}`);
 
@@ -23,13 +24,13 @@ export async function loginToAmazon(
 
     // Navigate to Amazon
     console.log('Navigating to Amazon login page');
-    await page.goto('https://www.amazon.com/ap/signin?openid.return_to=https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+    await page.goto('https://www.amazon.com/ap/signin?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.com%2F%3Fref_%3Dnav_signin&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.assoc_handle=usflex&openid.mode=checkid_setup&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0', {
       waitUntil: 'networkidle2',
       timeout: 60000,
     });
 
     // Wait a bit for page to stabilize
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Fill email
     const emailSelectors = ['#ap_email', '#ap_email_login', 'input[type="email"]', 'input[name="email"]'];
@@ -70,7 +71,7 @@ export async function loginToAmazon(
       // Wait for navigation after continue
       await Promise.race([
         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
-        page.waitForTimeout(3000),
+        new Promise(resolve => setTimeout(resolve, 3000)),
       ]);
     }
 
@@ -116,7 +117,7 @@ export async function loginToAmazon(
     // Wait for navigation after login
     await Promise.race([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
-      page.waitForTimeout(5000),
+      new Promise(resolve => setTimeout(resolve, 5000)),
     ]);
 
     // Check if we're still on login page (failed login)
@@ -133,7 +134,74 @@ export async function loginToAmazon(
 
     // Check for 2FA page
     if (url.includes('ap/mfa') || url.includes('ap/cvf')) {
-      throw new Error('2FA required - please disable 2FA on your Amazon account or implement 2FA handling');
+      console.log('2FA detected');
+
+      // Check the "remember device" checkbox if it exists
+      const rememberDeviceCheckbox = await page.$('#auth-mfa-remember-device');
+      if (rememberDeviceCheckbox) {
+        const isChecked = await page.evaluate(el => el.checked, rememberDeviceCheckbox);
+        if (!isChecked) {
+          await page.click('#auth-mfa-remember-device');
+          console.log('Checked "remember device" checkbox');
+        }
+      }
+
+      // If no 2FA code provided, throw error indicating 2FA is needed
+      if (!tfaCode) {
+        throw new Error('2FA_REQUIRED');
+      }
+
+      // Fill in 2FA code
+      console.log('Filling in 2FA code');
+      const tfaSelectors = ['#auth-mfa-otpcode', 'input[name="otpCode"]'];
+      let tfaFilled = false;
+
+      for (const selector of tfaSelectors) {
+        try {
+          await page.waitForSelector(selector, { timeout: 3000 });
+          await page.type(selector, tfaCode, { delay: 50 });
+          tfaFilled = true;
+          console.log(`2FA code filled using selector: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!tfaFilled) {
+        throw new Error('Could not find 2FA code input field');
+      }
+
+      // Submit 2FA
+      const tfaSubmitSelectors = ['#auth-signin-button', 'input[type="submit"]'];
+      let tfaSubmitted = false;
+
+      for (const selector of tfaSubmitSelectors) {
+        try {
+          await page.click(selector);
+          tfaSubmitted = true;
+          console.log(`Clicked 2FA submit using selector: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!tfaSubmitted) {
+        throw new Error('Could not find 2FA submit button');
+      }
+
+      // Wait for navigation after 2FA
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+        new Promise(resolve => setTimeout(resolve, 5000)),
+      ]);
+
+      // Check if 2FA failed
+      const urlAfter2FA = page.url();
+      if (urlAfter2FA.includes('ap/mfa') || urlAfter2FA.includes('ap/cvf')) {
+        throw new Error('2FA code incorrect or expired');
+      }
     }
 
     console.log('Login successful, extracting cookies');

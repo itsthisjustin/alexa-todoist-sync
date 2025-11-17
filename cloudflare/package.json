@@ -15,7 +15,8 @@
   "dependencies": {
     "@cloudflare/puppeteer": "^0.0.9",
     "hono": "^4.0.0",
-    "jose": "^5.2.0"
+    "jose": "^5.2.0",
+    "puppeteer": "^24.15.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240117.0",
