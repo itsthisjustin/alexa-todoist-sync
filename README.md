@@ -160,7 +160,7 @@ The easiest way to get started is with the Cloudflare Workers deployment:
 ## 📋 Prerequisites
 
 ### Cloudflare
-- Cloudflare account (free tier works!)
+- Cloudflare account
 - Wrangler CLI
 - Amazon account with Alexa Shopping List
 - Todoist account (OAuth recommended, or API token)
