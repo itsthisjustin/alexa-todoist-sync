@@ -205,6 +205,15 @@ See the README for your specific platform:
 - [Windows Troubleshooting](./windows/README.md#troubleshooting)
 - [Cloud Troubleshooting](./cloud/README.md#troubleshooting)
 
+## 🐞 Found a bug or want to request a feature?
+
+We'd love to hear from you! Please [open an issue on GitHub](https://github.com/itsthisjustin/alexa-todoist-sync/issues) to:
+
+- 🐛 Report bugs
+- ✨ Request new features
+- 💡 Suggest improvements
+- 📖 Ask questions
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
