@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alexa to Todoist Sync - Cloudflare Edition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="app"></div>
+
+  <script type="module">
+    const API_URL = 'https://app.alexatodoist.com'; // Worker API endpoint
+
+    // State
+    let token = localStorage.getItem('token');
+    let user = null;
+    let config = null;
+
+    // Helper functions
+    async function api(endpoint, options = {}) {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      };
+
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Request failed');
+      }
+
+      return response.json();
+    }
+
+    function render(html) {
+      document.getElementById('app').innerHTML = html;
+    }
+
+    // Views
+    function renderLanding() {
+      render(`
+        <div class="min-h-screen flex items-center justify-center">
+          <div class="max-w-md w-full space-y-8 p-8">
+            <div class="text-center">
+              <h1 class="text-4xl font-bold mb-2">Alexa to Todoist Sync</h1>
+              <p class="text-gray-600 mb-8">Cloudflare-powered, serverless edition</p>
+              <div class="space-y-4">
+                <button onclick="showLogin()" class="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700">
+                  Login
+                </button>
+                <button onclick="showSignup()" class="w-full bg-white text-indigo-600 border-2 border-indigo-600 py-3 rounded-lg hover:bg-indigo-50">
+                  Sign Up
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderLogin() {
+      render(`
+        <div class="min-h-screen flex items-center justify-center">
+          <div class="max-w-md w-full space-y-8 p-8">
+            <h2 class="text-2xl font-bold text-center">Login</h2>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+              <input type="email" id="email" placeholder="Email" required
+                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+              <input type="password" id="password" placeholder="Password" required
+                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+              <div id="login-error" class="text-red-600 text-sm hidden"></div>
+              <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700">
+                Login
+              </button>
+              <button type="button" onclick="showLanding()" class="w-full text-gray-600">
+                Back
+              </button>
+            </form>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderSignup() {
+      render(`
+        <div class="min-h-screen flex items-center justify-center">
+          <div class="max-w-md w-full space-y-8 p-8">
+            <h2 class="text-2xl font-bold text-center">Sign Up</h2>
+            <form onsubmit="handleSignup(event)" class="space-y-4">
+              <input type="email" id="email" placeholder="Email" required
+                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+              <input type="password" id="password" placeholder="Password (min 8 chars)" required minlength="8"
+                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+              <div id="signup-error" class="text-red-600 text-sm hidden"></div>
+              <button type="submit" class="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700">
+                Sign Up
+              </button>
+              <button type="button" onclick="showLanding()" class="w-full text-gray-600">
+                Back
+              </button>
+            </form>
+          </div>
+        </div>
+      `);
+    }
+
+    async function renderDashboard() {
+      const hasAmazon = config?.hasAmazonSession || false;
+      const hasTodoist = config?.hasTodoist || false;
+      const isActive = config?.isActive || false;
+      const tier = config?.subscriptionTier || 'free';
+
+      // Fetch pricing tiers
+      let pricingTiers = {};
+      try {
+        const pricing = await api('/api/pricing');
+        pricingTiers = pricing.tiers;
+      } catch (e) {
+        console.error('Failed to load pricing', e);
+      }
+
+      render(`
+        <div class="min-h-screen bg-gray-50">
+          <div class="bg-white shadow">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+              <h1 class="text-2xl font-bold">Dashboard</h1>
+              <button onclick="handleLogout()" class="text-gray-600 hover:text-gray-900">Logout</button>
+            </div>
+          </div>
+
+          <div class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+            <!-- Status Card -->
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-lg font-semibold mb-4">Sync Status</h2>
+              <div class="grid grid-cols-3 gap-4">
+                <div>
+                  <p class="text-sm text-gray-600">Status</p>
+                  <p class="text-lg font-semibold ${isActive ? 'text-green-600' : 'text-gray-600'}">
+                    ${isActive ? 'Active' : 'Inactive'}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-600">Amazon</p>
+                  <p class="text-lg font-semibold ${hasAmazon ? 'text-green-600' : 'text-red-600'}">
+                    ${hasAmazon ? 'Connected' : 'Not Connected'}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-600">Todoist</p>
+                  <p class="text-lg font-semibold ${hasTodoist ? 'text-green-600' : 'text-red-600'}">
+                    ${hasTodoist ? 'Connected' : 'Not Connected'}
+                  </p>
+                </div>
+              </div>
+              ${config?.lastAlexaToTodoistSync ? `
+                <p class="mt-4 text-sm text-gray-600">
+                  Last Amazon→Todoist sync: ${new Date(config.lastAlexaToTodoistSync).toLocaleString()}
+                </p>
+              ` : ''}
+            ${config?.lastTodoistToAlexaSync ? `
+                <p class="text-sm text-gray-600">
+                  Last Todoist→Amazon sync: ${new Date(config.lastTodoistToAlexaSync).toLocaleString()}
+                </p>
+              ` : ''}
+            </div>
+
+            <!-- Subscription Tier -->
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-lg font-semibold mb-4">Subscription: ${tier.charAt(0).toUpperCase() + tier.slice(1)}</h2>
+              <div class="grid grid-cols-3 gap-4 mb-6">
+                ${Object.entries(pricingTiers).map(([key, t]) => `
+                  <div class="border-2 ${key === tier ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200'} rounded-lg p-4">
+                    <h3 class="font-semibold text-lg">${t.name}</h3>
+                    <p class="text-2xl font-bold text-indigo-600 mb-2">
+                      ${t.price === 0 ? 'Free' : '$' + t.price + '/mo'}
+                    </p>
+                    <ul class="text-sm space-y-1">
+                      ${t.features.map(f => `<li>• ${f}</li>`).join('')}
+                    </ul>
+                    ${key !== tier && key !== 'free' ? `
+                      <button onclick="handleUpgrade('${key}')" class="mt-4 w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 text-sm">
+                        Upgrade
+                      </button>
+                    ` : key === tier ? `
+                      <div class="mt-4 text-center text-sm text-green-600 font-semibold">Current Plan</div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Sync Intervals -->
+            ${hasAmazon && hasTodoist ? `
+              <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-4">Sync Settings</h2>
+                <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p class="text-sm text-green-800">
+                    ✓ <strong>Todoist → Alexa:</strong> Instant sync via webhooks (all tiers)
+                  </p>
+                  <p class="text-xs text-green-700 mt-1">
+                    Items completed in Todoist are instantly removed from your Alexa shopping list
+                  </p>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">
+                  Configure how often to check Alexa for new items. Faster intervals require a paid plan.
+                </p>
+                <form onsubmit="handleUpdateIntervals(event)" class="space-y-4">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                      Alexa → Todoist (check for new Alexa items)
+                    </label>
+                    <select id="alexa-interval" class="w-full px-4 py-2 border rounded-lg">
+                      <option value="5" ${config.alexaToTodoistInterval === 5 ? 'selected' : ''}>Every 5 minutes (Faster - $5/mo)</option>
+                      <option value="30" ${config.alexaToTodoistInterval === 30 ? 'selected' : ''}>Every 30 minutes (Fast - $1.99/mo)</option>
+                      <option value="60" ${config.alexaToTodoistInterval === 60 ? 'selected' : ''}>Every hour (Free)</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">
+                      Current: Every ${config.alexaToTodoistInterval} minutes
+                    </p>
+                  </div>
+
+                  <div id="interval-error" class="text-red-600 text-sm hidden"></div>
+
+                  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+                    Update Interval
+                  </button>
+                </form>
+              </div>
+            ` : ''}
+          </div>
+
+            <!-- Todoist Setup -->
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-lg font-semibold mb-4">Todoist Configuration</h2>
+              ${hasTodoist ? `
+                <p class="text-green-600 mb-4">✓ Todoist connected with instant webhook sync</p>
+                <p class="text-sm text-gray-600">Complete items in Todoist and they'll instantly disappear from your Alexa shopping list!</p>
+              ` : `
+                <p class="text-sm text-gray-600 mb-4">
+                  Connect your Todoist account to sync your Alexa shopping list. We'll ask you to choose which project to use.
+                </p>
+                <div id="todoist-error" class="text-red-600 text-sm mb-4 hidden"></div>
+                <button onclick="handleTodoistConnect()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2">
+                  <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M21.5 7.5l-9 9-4.5-4.5L6.5 10.5 12.5 16.5 23 6z"/>
+                  </svg>
+                  Connect Todoist
+                </button>
+                <p class="mt-2 text-sm text-gray-600">
+                  Get your API token from
+                  <a href="https://todoist.com/prefs/integrations" target="_blank" class="text-indigo-600">
+                    Todoist Settings → Integrations
+                  </a>
+                </p>
+              `}
+            </div>
+
+            <!-- Amazon Setup -->
+            <div class="bg-white rounded-lg shadow p-6">
+              <h2 class="text-lg font-semibold mb-4">Amazon Configuration</h2>
+              ${hasAmazon ? `
+                <p class="text-green-600 mb-4">✓ Amazon session active</p>
+                <button onclick="showAmazonLogin()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+                  Reconnect Amazon
+                </button>
+              ` : `
+                <form onsubmit="handleAmazonLogin(event)" class="space-y-4">
+                  <p class="text-sm text-gray-600 mb-4">
+                    We'll use Cloudflare Puppeteer to login once and save your session.
+                    <strong>Your password is never stored</strong> - only encrypted cookies.
+                  </p>
+                  <input type="email" id="amazon-email" placeholder="Amazon Email" required
+                    class="w-full px-4 py-2 border rounded-lg">
+                  <input type="password" id="amazon-password" placeholder="Amazon Password" required
+                    class="w-full px-4 py-2 border rounded-lg">
+                  <div id="amazon-error" class="text-red-600 text-sm hidden"></div>
+                  <div id="amazon-loading" class="text-indigo-600 hidden">
+                    <p>Logging in to Amazon... This may take 10-20 seconds.</p>
+                  </div>
+                  <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+                    Connect Amazon
+                  </button>
+                </form>
+              `}
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    // Event handlers
+    window.showLanding = renderLanding;
+    window.showLogin = renderLogin;
+    window.showSignup = renderSignup;
+
+    window.handleLogin = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const result = await api('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        token = result.token;
+        user = result.user;
+        localStorage.setItem('token', token);
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('login-error').textContent = error.message;
+        document.getElementById('login-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleSignup = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const result = await api('/api/auth/signup', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        token = result.token;
+        user = result.user;
+        localStorage.setItem('token', token);
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('signup-error').textContent = error.message;
+        document.getElementById('signup-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleLogout = () => {
+      token = null;
+      user = null;
+      config = null;
+      localStorage.removeItem('token');
+      renderLanding();
+    };
+
+    window.handleTodoistConnect = async () => {
+      try {
+        const response = await api('/api/todoist/connect');
+        // Redirect to Todoist OAuth
+        window.location.href = response.url;
+      } catch (error) {
+        const errorEl = document.getElementById('todoist-error');
+        if (errorEl) {
+          errorEl.textContent = error.message;
+          errorEl.classList.remove('hidden');
+        }
+      }
+    };
+
+    window.handleTodoistConfig = async (e) => {
+      e.preventDefault();
+      const apiToken = document.getElementById('todoist-token').value;
+      const projectId = document.getElementById('todoist-project').value;
+
+      try {
+        await api('/api/config/todoist', {
+          method: 'POST',
+          body: JSON.stringify({ apiToken, projectId }),
+        });
+
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('todoist-error').textContent = error.message;
+        document.getElementById('todoist-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleAmazonLogin = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('amazon-email').value;
+      const password = document.getElementById('amazon-password').value;
+
+      document.getElementById('amazon-loading').classList.remove('hidden');
+      document.getElementById('amazon-error').classList.add('hidden');
+
+      try {
+        await api('/api/config/amazon', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('amazon-error').textContent = error.message;
+        document.getElementById('amazon-error').classList.remove('hidden');
+      } finally {
+        document.getElementById('amazon-loading').classList.add('hidden');
+      }
+    };
+
+    window.handleUpdateIntervals = async (e) => {
+      e.preventDefault();
+      const alexaInterval = parseInt(document.getElementById('alexa-interval').value);
+
+      document.getElementById('interval-error').classList.add('hidden');
+
+      try {
+        await api('/api/config/intervals', {
+          method: 'POST',
+          body: JSON.stringify({
+            alexaToTodoistInterval: alexaInterval,
+          }),
+        });
+
+        await loadConfig();
+        renderDashboard();
+        alert('Interval updated successfully!');
+      } catch (error) {
+        document.getElementById('interval-error').textContent = error.message;
+        document.getElementById('interval-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleUpgrade = async (tier) => {
+      try {
+        const response = await api('/api/stripe/checkout', {
+          method: 'POST',
+          body: JSON.stringify({ tier }),
+        });
+
+        // Redirect to Stripe Checkout
+        window.location.href = response.url;
+      } catch (error) {
+        alert('Failed to start checkout: ' + error.message);
+      }
+    };
+
+    async function loadConfig() {
+      config = await api('/api/config');
+    }
+
+    // Show project selection modal
+    async function showProjectSelection() {
+      try {
+        const { projects } = await api('/api/todoist/projects');
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+          <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 class="text-xl font-bold mb-4">Select Todoist Project</h2>
+            <p class="text-sm text-gray-600 mb-4">Choose which Todoist project to sync with your Alexa shopping list:</p>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+              ${projects.map(p => `
+                <button
+                  onclick="selectProject('${p.id}', '${p.name.replace(/'/g, "\\'")}')"
+                  class="w-full text-left px-4 py-3 border rounded-lg hover:bg-indigo-50 hover:border-indigo-600"
+                >
+                  <div class="font-medium">${p.name}</div>
+                  ${p.comment_count ? `<div class="text-xs text-gray-500">${p.comment_count} items</div>` : ''}
+                </button>
+              `).join('')}
+            </div>
+            <button onclick="closeProjectModal()" class="mt-4 w-full text-gray-600 py-2">Cancel</button>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      } catch (error) {
+        alert('Failed to load projects: ' + error.message);
+        await loadConfig();
+        renderDashboard();
+      }
+    }
+
+    window.selectProject = async (projectId, projectName) => {
+      try {
+        await api('/api/todoist/complete', {
+          method: 'POST',
+          body: JSON.stringify({ projectId }),
+        });
+
+        closeProjectModal();
+        await loadConfig();
+        renderDashboard();
+        alert(`Connected to Todoist project "${projectName}"! Webhooks are active for instant sync.`);
+      } catch (error) {
+        alert('Failed to complete setup: ' + error.message);
+      }
+    };
+
+    window.closeProjectModal = () => {
+      const modal = document.querySelector('.fixed.inset-0');
+      if (modal) modal.remove();
+    };
+
+    // Initialize
+    (async function init() {
+      if (token) {
+        try {
+          await loadConfig();
+
+          // Check if redirected back from Todoist OAuth
+          const urlParams = new URLSearchParams(window.location.search);
+          if (urlParams.get('todoist_connected') === 'true') {
+            // Clean URL
+            window.history.replaceState({}, '', '/dashboard');
+            // Show project selection
+            await showProjectSelection();
+          } else if (urlParams.get('error')) {
+            alert('Authentication error: ' + urlParams.get('error'));
+            window.history.replaceState({}, '', '/dashboard');
+          }
+
+          renderDashboard();
+        } catch (error) {
+          // Token expired
+          handleLogout();
+        }
+      } else {
+        renderLanding();
+      }
+    })();
+  </script>
+</body>
+</html>
