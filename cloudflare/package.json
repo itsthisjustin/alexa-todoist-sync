@@ -1,0 +1,26 @@
+{
+  "name": "alexa-todoist-sync-cloudflare",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "kv:create": "wrangler kv:namespace create SESSIONS && wrangler kv:namespace create USERS",
+    "queue:create": "wrangler queues create alexa-todoist-sync-queue",
+    "secret:encryption": "wrangler secret put ENCRYPTION_KEY",
+    "secret:jwt": "wrangler secret put JWT_SECRET"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^0.0.9",
+    "hono": "^4.0.0",
+    "jose": "^5.2.0",
+    "puppeteer": "^24.15.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "wrangler": "^3.25.0",
+    "typescript": "^5.3.3"
+  }
+}

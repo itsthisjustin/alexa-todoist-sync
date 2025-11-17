@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alexa to Todoist Sync - Cloudflare Edition</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+  <div id="app"></div>
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <script type="module">
+    const API_URL = 'https://app.alexatodoist.com'; // Worker API endpoint
+
+    // State
+    let token = localStorage.getItem('token');
+    let user = null;
+    let config = null;
+
+    // Toast notification system
+    function toast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+
+      const colors = {
+        success: 'bg-green-600',
+        error: 'bg-red-600',
+        info: 'bg-indigo-600',
+        warning: 'bg-yellow-600'
+      };
+
+      toast.className = `${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg max-w-sm transform transition-all duration-300 ease-in-out opacity-0 translate-x-4`;
+      toast.innerHTML = `
+        <div class="flex items-start gap-3">
+          <div class="flex-1">${message}</div>
+          <button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-200">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      container.appendChild(toast);
+
+      // Animate in
+      setTimeout(() => {
+        toast.classList.remove('opacity-0', 'translate-x-4');
+      }, 10);
+
+      // Auto dismiss after 5 seconds
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-x-4');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+
+    // Helper functions
+    async function api(endpoint, options = {}) {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      };
+
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Request failed');
+      }
+
+      return response.json();
+    }
+
+    function render(html) {
+      document.getElementById('app').innerHTML = html;
+    }
+
+    // Views
+    function renderLanding() {
+      render(`
+        <div class="min-h-screen flex items-center justify-center bg-gray-50 p-8">
+          <div class="max-w-2xl w-full">
+            <div class="bg-white border border-gray-200 p-8 rounded">
+              <pre class="font-mono text-sm leading-relaxed text-gray-800 whitespace-pre-wrap mb-8">remember when alexa and todoist just... worked together?
+
+yeah, me too.
+
+then one day amazon decided to kill the native integration.
+no warning. no replacement. just gone.
+
+i missed it. a lot.
+
+so i built this thing. it's super hacky - logs into amazon
+with puppeteer, scrapes your alexa shopping list, syncs it
+to todoist. the code is a mess. it absolutely should not work.
+
+but it does.
+
+important: this only works with todoist. only syncs your
+alexa shopping list (not to-do list or other lists). that's it.
+
+runs on cloudflare workers because why not. costs basically
+nothing. syncs every hour (or faster if you pay a couple bucks).
+when you check things off in todoist, they get marked done in
+alexa too. pretty cool.
+
+the whole thing is open source. you can run it yourself if
+you want. or just use this one. i don't really care.
+
+it's not fancy. it's not a startup. it's just a thing that
+does the thing i needed it to do.
+
+welcome.</pre>
+
+              <div class="space-y-3">
+                <button onclick="showLogin()" class="w-full bg-gray-900 text-white py-3 rounded hover:bg-gray-800 font-mono text-sm">
+                  login
+                </button>
+                <button onclick="showSignup()" class="w-full bg-white text-gray-900 border border-gray-900 py-3 rounded hover:bg-gray-50 font-mono text-sm">
+                  sign up
+                </button>
+                <div class="text-center pt-2">
+                  <a href="https://github.com/itsthisjustin/alexa-todoist-sync" target="_blank" rel="noopener noreferrer" class="text-sm text-gray-600 hover:text-gray-900 font-mono">
+                    view source on github →
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderLogin() {
+      render(`
+        <div class="min-h-screen flex items-center justify-center bg-gray-50 p-8">
+          <div class="max-w-md w-full">
+            <div class="bg-white border border-gray-200 p-8 rounded">
+              <h2 class="text-xl font-mono font-bold mb-6">login</h2>
+              <form onsubmit="handleLogin(event)" class="space-y-4">
+                <input type="email" id="email" placeholder="email" required
+                  class="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono text-sm">
+                <input type="password" id="password" placeholder="password" required
+                  class="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono text-sm">
+                <div id="login-error" class="text-red-600 text-sm font-mono hidden"></div>
+                <button type="submit" class="w-full bg-gray-900 text-white py-3 rounded hover:bg-gray-800 font-mono text-sm">
+                  login
+                </button>
+                <button type="button" onclick="showLanding()" class="w-full text-gray-600 hover:text-gray-900 font-mono text-sm">
+                  ← back
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderSignup() {
+      render(`
+        <div class="min-h-screen flex items-center justify-center bg-gray-50 p-8">
+          <div class="max-w-md w-full">
+            <div class="bg-white border border-gray-200 p-8 rounded">
+              <h2 class="text-xl font-mono font-bold mb-6">sign up</h2>
+              <form onsubmit="handleSignup(event)" class="space-y-4">
+                <input type="email" id="email" placeholder="email" required
+                  class="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono text-sm">
+                <input type="password" id="password" placeholder="password (min 8 chars)" required minlength="8"
+                  class="w-full px-4 py-2 border border-gray-300 rounded focus:outline-none focus:border-gray-900 font-mono text-sm">
+                <div id="signup-error" class="text-red-600 text-sm font-mono hidden"></div>
+                <button type="submit" class="w-full bg-gray-900 text-white py-3 rounded hover:bg-gray-800 font-mono text-sm">
+                  sign up
+                </button>
+                <button type="button" onclick="showLanding()" class="w-full text-gray-600 hover:text-gray-900 font-mono text-sm">
+                  ← back
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    async function renderDashboard() {
+      const hasAmazon = config?.hasAmazonSession || false;
+      const hasTodoist = config?.hasTodoist || false;
+      const isActive = config?.isActive || false;
+      const tier = config?.subscriptionTier || 'free';
+
+      // Fetch pricing tiers
+      let pricingTiers = {};
+      try {
+        const pricing = await api('/api/pricing');
+        pricingTiers = pricing.tiers;
+      } catch (e) {
+        console.error('Failed to load pricing', e);
+      }
+
+      render(`
+        <div class="min-h-screen bg-gray-50">
+          <div class="bg-white border-b border-gray-200">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+              <h1 class="text-xl font-mono font-bold">this is your dashboard</h1>
+              <button onclick="handleLogout()" class="text-gray-600 hover:text-gray-900 font-mono text-sm">logout</button>
+            </div>
+          </div>
+
+          <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+            <!-- Status Card -->
+            <div class="bg-white border border-gray-200 rounded p-6">
+              <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-mono font-bold">sync status</h2>
+                ${isActive ? `
+                  <button onclick="handleManualSync()" id="manual-sync-btn" class="bg-gray-900 text-white px-4 py-2 rounded hover:bg-gray-800 text-sm font-mono flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    sync now
+                  </button>
+                ` : ''}
+              </div>
+              <div class="grid grid-cols-3 gap-4">
+                <div>
+                  <p class="text-sm text-gray-600 font-mono">status</p>
+                  <p class="text-lg font-mono ${isActive ? 'text-green-600' : 'text-gray-600'}">
+                    ${isActive ? 'active' : 'inactive'}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-600 font-mono">amazon</p>
+                  <p class="text-lg font-mono ${hasAmazon ? 'text-green-600' : 'text-red-600'}">
+                    ${hasAmazon ? 'connected' : 'not connected'}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-sm text-gray-600 font-mono">todoist</p>
+                  <p class="text-lg font-mono ${hasTodoist ? 'text-green-600' : 'text-red-600'}">
+                    ${hasTodoist ? 'connected' : 'not connected'}
+                  </p>
+                </div>
+              </div>
+              ${config?.lastAlexaToTodoistSync ? `
+                <p class="mt-4 text-sm text-gray-600 font-mono">
+                  last synced at ${new Date(config.lastAlexaToTodoistSync).toLocaleString()}
+                </p>
+              ` : ''}
+            </div>
+
+            <!-- Configuration Cards Grid -->
+            <div class="grid md:grid-cols-2 gap-6">
+              <!-- Todoist Setup -->
+              <div class="bg-white border border-gray-200 rounded p-6">
+                <div class="mb-4">
+                  <h2 class="text-lg font-mono font-bold">todoist</h2>
+                </div>
+                ${hasTodoist ? `
+                  <div class="p-4 bg-green-50 border border-green-200 rounded-lg mb-3">
+                    <p class="text-sm text-green-800 font-mono">✓ connected with instant webhook sync</p>
+                    <p class="text-xs text-green-700 mt-1 font-mono">items completed in todoist instantly sync to alexa</p>
+                  </div>
+                  <button onclick="handleTodoistDisconnect()" class="text-sm text-gray-600 hover:text-gray-900 font-mono">
+                    disconnect
+                  </button>
+                ` : `
+                  <p class="text-sm text-gray-600 mb-4 font-mono">
+                    connect todoist so we know where to put your alexa items. pretty straightforward.
+                  </p>
+                  <div id="todoist-error" class="text-red-600 text-sm mb-4 hidden font-mono"></div>
+                  <button onclick="handleTodoistConnect()" class="w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-mono">
+                    connect todoist
+                  </button>
+                `}
+              </div>
+
+              <!-- Amazon Setup -->
+              <div class="bg-white border border-gray-200 rounded p-6">
+                <div class="mb-4">
+                  <h2 class="text-lg font-mono font-bold">amazon alexa</h2>
+                </div>
+                ${hasAmazon ? `
+                  <div class="p-4 bg-green-50 border border-green-200 rounded-lg mb-3">
+                    <p class="text-sm text-green-800 font-mono">✓ session active</p>
+                    <p class="text-xs text-green-700 mt-1 font-mono">your alexa shopping list is syncing</p>
+                  </div>
+                  <button onclick="handleAmazonDisconnect()" class="text-sm text-gray-600 hover:text-gray-900 font-mono">
+                    reconnect amazon
+                  </button>
+                ` : `
+                  <p class="text-sm text-gray-600 mb-4 font-mono">
+                    we'll log into amazon with puppeteer and save your session cookies. <strong>passwords aren't stored</strong> - just encrypted cookies. yes this is kinda sketchy to do with your amazon account. i don't want your login, i promise. you can run this yourself if you don't trust me. also if you have a passkey enabled i haven't figured out how to bypass that annoying popup yet.
+                  </p>
+                  <form onsubmit="handleAmazonLogin(event)" class="space-y-3">
+                    <input type="email" id="amazon-email" placeholder="amazon email" required
+                      class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
+                    <input type="password" id="amazon-password" placeholder="amazon password" required
+                      class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
+                    <div id="amazon-2fa-container" class="hidden">
+                      <input type="text" id="amazon-2fa-code" placeholder="enter 2fa code"
+                        class="w-full px-4 py-2 border rounded-lg font-mono text-sm" maxlength="6">
+                      <p class="text-xs text-gray-600 mt-1 font-mono">enter the 6-digit code from your authenticator app or sms</p>
+                    </div>
+                    <div id="amazon-error" class="text-red-600 text-sm hidden font-mono"></div>
+                    <div id="amazon-loading" class="text-gray-600 hidden">
+                      <p class="font-mono">logging in to amazon... this may take 30-60 seconds.</p>
+                    </div>
+                    <button type="submit" id="amazon-submit-btn" class="w-full bg-gray-900 text-white py-3 rounded-lg hover:bg-gray-800 font-mono">
+                      connect amazon
+                    </button>
+                  </form>
+                `}
+              </div>
+            </div>
+
+            <!-- Subscription Plans -->
+            <div class="bg-white border border-gray-200 rounded p-6">
+              <h2 class="text-lg font-mono font-bold mb-4">subscription plans</h2>
+              <div class="grid md:grid-cols-3 gap-4">
+                ${Object.entries(pricingTiers).map(([key, t]) => `
+                  <div class="border-2 ${key === tier ? 'border-gray-900 bg-gray-50' : 'border-gray-200'} rounded p-4 relative">
+                    ${key === tier ? '<div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-3 py-1 rounded text-xs font-mono">current</div>' : ''}
+                    <h3 class="font-mono font-bold text-lg mt-2">${t.name.toLowerCase()}</h3>
+                    <p class="text-3xl font-mono text-gray-900 my-3">
+                      ${t.price === 0 ? 'free' : '$' + t.price}<span class="text-sm text-gray-600 font-mono">/mo</span>
+                    </p>
+                    <ul class="text-sm space-y-2 mb-4 font-mono">
+                      ${t.features.map(f => `<li class="flex items-start gap-2"><span class="text-gray-600">•</span><span class="text-gray-700">${f.replace(/'/g, '&#39;')}</span></li>`).join('')}
+                    </ul>
+                    ${key !== tier && key !== 'free' ? `
+                      <button onclick="handleUpgrade('${key}')" class="mt-2 w-full bg-gray-900 text-white py-2 rounded hover:bg-gray-800 text-sm font-mono">
+                        upgrade
+                      </button>
+                    ` : key === tier && key !== 'free' ? `
+                      <button onclick="handleCancelSubscription()" class="mt-2 w-full text-gray-600 hover:text-gray-900 py-2 text-sm font-mono border border-gray-300 rounded hover:bg-gray-50">
+                        cancel subscription
+                      </button>
+                    ` : key === tier ? `
+                      <div class="mt-2 w-full text-center py-2 text-sm text-gray-500 font-mono">your plan</div>
+                    ` : `
+                      <div class="mt-2 w-full text-center py-2 text-sm text-gray-500 font-mono">—</div>
+                    `}
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Feedback Section -->
+            <div class="bg-white border border-gray-200 rounded p-6">
+              <h2 class="text-lg font-mono font-bold mb-2">something broken?</h2>
+              <p class="text-sm text-gray-600 font-mono mb-4">probably. let me know on github and i'll try to fix it when i have time.</p>
+              <a href="https://github.com/itsthisjustin/alexa-todoist-sync/issues" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 bg-gray-900 text-white px-6 py-2 rounded hover:bg-gray-800 text-sm font-mono">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                open an issue
+              </a>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="bg-white border-2 border-red-200 rounded p-6">
+              <h2 class="text-lg font-mono font-bold mb-2 text-red-600">danger zone</h2>
+              <p class="text-sm text-gray-600 font-mono mb-4">this will make me forget you existed. your login here, your config, your amazon session. it's all gone.</p>
+              <button onclick="handleDeleteAccount()" class="bg-red-600 text-white px-6 py-2 rounded hover:bg-red-700 text-sm font-mono">
+                delete account
+              </button>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    // Event handlers
+    window.showLanding = renderLanding;
+    window.showLogin = renderLogin;
+    window.showSignup = renderSignup;
+
+    window.handleLogin = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const result = await api('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        token = result.token;
+        user = result.user;
+        localStorage.setItem('token', token);
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('login-error').textContent = error.message;
+        document.getElementById('login-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleSignup = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        const result = await api('/api/auth/signup', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+
+        token = result.token;
+        user = result.user;
+        localStorage.setItem('token', token);
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('signup-error').textContent = error.message;
+        document.getElementById('signup-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleLogout = () => {
+      token = null;
+      user = null;
+      config = null;
+      localStorage.removeItem('token');
+      renderLanding();
+    };
+
+    window.handleTodoistConnect = async () => {
+      try {
+        const response = await api('/api/todoist/connect');
+        // Redirect to Todoist OAuth
+        window.location.href = response.url;
+      } catch (error) {
+        const errorEl = document.getElementById('todoist-error');
+        if (errorEl) {
+          errorEl.textContent = error.message;
+          errorEl.classList.remove('hidden');
+        }
+      }
+    };
+
+    window.handleTodoistDisconnect = async () => {
+      if (!confirm('Are you sure you want to disconnect Todoist? Your sync will stop until you reconnect.')) {
+        return;
+      }
+
+      try {
+        await api('/api/config/todoist', { method: 'DELETE' });
+        await loadConfig();
+        renderDashboard();
+        toast('Todoist disconnected successfully', 'success');
+      } catch (error) {
+        toast('Failed to disconnect Todoist: ' + error.message, 'error');
+      }
+    };
+
+    window.handleAmazonDisconnect = async () => {
+      if (!confirm('Are you sure you want to reconnect Amazon? You will need to log in again.')) {
+        return;
+      }
+
+      try {
+        await api('/api/config/amazon', { method: 'DELETE' });
+        await loadConfig();
+        renderDashboard();
+        toast('Amazon disconnected. Please log in again.', 'info');
+      } catch (error) {
+        toast('Failed to disconnect Amazon: ' + error.message, 'error');
+      }
+    };
+
+    window.handleDeleteAccount = async () => {
+      const confirmed = confirm('⚠️ WARNING: This will permanently delete your configuration here and all data. This cannot be undone.\n\nAre you absolutely sure you want to delete?');
+      if (!confirmed) {
+        return;
+      }
+
+      // Double confirmation
+      const doubleConfirm = confirm('This is your last chance. Type YES in the next prompt to confirm account deletion.');
+      if (!doubleConfirm) {
+        return;
+      }
+
+      const finalConfirm = prompt('Type YES in all caps to confirm permanent account deletion:');
+      if (finalConfirm !== 'YES') {
+        toast('Account deletion cancelled', 'info');
+        return;
+      }
+
+      try {
+        await api('/api/account', { method: 'DELETE' });
+        toast('Account deleted successfully. Goodbye!', 'success');
+
+        // Wait a moment for toast to show, then logout
+        setTimeout(() => {
+          handleLogout();
+        }, 2000);
+      } catch (error) {
+        toast('Failed to delete account: ' + error.message, 'error');
+      }
+    };
+
+    window.handleManualSync = async () => {
+      const btn = document.getElementById('manual-sync-btn');
+      if (!btn) return;
+
+      // Disable button and show loading state
+      btn.disabled = true;
+      btn.innerHTML = `
+        <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Syncing...
+      `;
+
+      try {
+        const result = await api('/api/sync/manual', { method: 'POST' });
+        toast(result.message || 'Sync started successfully!', 'success');
+
+        // Reload config after a delay to show updated sync time
+        setTimeout(async () => {
+          await loadConfig();
+          renderDashboard();
+        }, 3000);
+      } catch (error) {
+        toast('Failed to start sync: ' + error.message, 'error');
+      } finally {
+        // Re-enable button
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Sync Now
+        `;
+      }
+    };
+
+    window.handleTodoistConfig = async (e) => {
+      e.preventDefault();
+      const apiToken = document.getElementById('todoist-token').value;
+      const projectId = document.getElementById('todoist-project').value;
+
+      try {
+        await api('/api/config/todoist', {
+          method: 'POST',
+          body: JSON.stringify({ apiToken, projectId }),
+        });
+
+        await loadConfig();
+        renderDashboard();
+      } catch (error) {
+        document.getElementById('todoist-error').textContent = error.message;
+        document.getElementById('todoist-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleAmazonLogin = async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('amazon-email').value;
+      const password = document.getElementById('amazon-password').value;
+      const tfaCode = document.getElementById('amazon-2fa-code')?.value || undefined;
+
+      document.getElementById('amazon-loading').classList.remove('hidden');
+      document.getElementById('amazon-error').classList.add('hidden');
+
+      try {
+        const result = await api('/api/config/amazon', {
+          method: 'POST',
+          body: JSON.stringify({ email, password, tfaCode }),
+        });
+
+        // Check if 2FA is required
+        if (result.needs2FA) {
+          document.getElementById('amazon-2fa-container').classList.remove('hidden');
+          document.getElementById('amazon-submit-btn').textContent = 'Submit 2FA Code';
+          document.getElementById('amazon-loading').classList.add('hidden');
+          toast('Please enter your 2FA code', 'info');
+          document.getElementById('amazon-2fa-code').focus();
+          return;
+        }
+
+        await loadConfig();
+        renderDashboard();
+        toast('Amazon connected successfully!', 'success');
+      } catch (error) {
+        document.getElementById('amazon-error').textContent = error.message;
+        document.getElementById('amazon-error').classList.remove('hidden');
+      } finally {
+        document.getElementById('amazon-loading').classList.add('hidden');
+      }
+    };
+
+    window.handleUpdateIntervals = async (e) => {
+      e.preventDefault();
+      const alexaInterval = parseInt(document.getElementById('alexa-interval').value);
+
+      document.getElementById('interval-error').classList.add('hidden');
+
+      try {
+        await api('/api/config/intervals', {
+          method: 'POST',
+          body: JSON.stringify({
+            alexaToTodoistInterval: alexaInterval,
+          }),
+        });
+
+        await loadConfig();
+        renderDashboard();
+        toast('Interval updated successfully!', 'success');
+      } catch (error) {
+        document.getElementById('interval-error').textContent = error.message;
+        document.getElementById('interval-error').classList.remove('hidden');
+      }
+    };
+
+    window.handleUpgrade = async (tier) => {
+      try {
+        const response = await api('/api/stripe/checkout', {
+          method: 'POST',
+          body: JSON.stringify({ tier }),
+        });
+
+        // Redirect to Stripe Checkout
+        window.location.href = response.url;
+      } catch (error) {
+        toast('Failed to start checkout: ' + error.message, 'error');
+      }
+    };
+
+    window.handleCancelSubscription = async () => {
+      const confirmed = confirm('are you sure you want to cancel your subscription? you\'ll be downgraded to the free tier and syncs will happen every hour instead.');
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await api('/api/stripe/cancel', { method: 'POST' });
+        toast('subscription cancelled. you\'ll stay on your current plan until the end of your billing period.', 'success');
+
+        // Reload config and dashboard
+        setTimeout(async () => {
+          await loadConfig();
+          renderDashboard();
+        }, 2000);
+      } catch (error) {
+        toast('failed to cancel subscription: ' + error.message, 'error');
+      }
+    };
+
+    async function loadConfig() {
+      config = await api('/api/config');
+    }
+
+    // Show project selection modal
+    async function showProjectSelection() {
+      try {
+        const { projects } = await api('/api/todoist/projects');
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+          <div class="bg-white border border-gray-200 rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 class="text-xl font-mono font-bold mb-4">pick a project</h2>
+            <p class="text-sm text-gray-600 mb-4 font-mono">your alexa items will show up here. choose wisely (or don't, you can change it later):</p>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+              ${projects.map(p => `
+                <button
+                  onclick="selectProject('${p.id}', '${p.name.replace(/'/g, "\\'")}')"
+                  class="w-full text-left px-4 py-3 border rounded-lg hover:bg-gray-50 hover:border-gray-900 font-mono"
+                >
+                  <div>${p.name}</div>
+                  ${p.comment_count ? `<div class="text-xs text-gray-500">${p.comment_count} items</div>` : ''}
+                </button>
+              `).join('')}
+            </div>
+            <button onclick="closeProjectModal()" class="mt-4 w-full text-gray-600 py-2 font-mono hover:text-gray-900">cancel</button>
+          </div>
+        `;
+        document.body.appendChild(modal);
+      } catch (error) {
+        toast('Failed to load projects: ' + error.message, 'error');
+        await loadConfig();
+        renderDashboard();
+      }
+    }
+
+    window.selectProject = async (projectId, projectName) => {
+      try {
+        await api('/api/todoist/complete', {
+          method: 'POST',
+          body: JSON.stringify({ projectId }),
+        });
+
+        closeProjectModal();
+        await loadConfig();
+        renderDashboard();
+        toast(`Connected to Todoist project "${projectName}"! Webhooks are active for instant sync.`, 'success');
+      } catch (error) {
+        toast('Failed to complete setup: ' + error.message, 'error');
+      }
+    };
+
+    window.closeProjectModal = async () => {
+      const modal = document.querySelector('.fixed.inset-0');
+      if (modal) modal.remove();
+
+      // Clean up pending Todoist token when canceling
+      try {
+        await api('/api/config/todoist', { method: 'DELETE' });
+      } catch (error) {
+        // Ignore errors - token might not exist
+      }
+    };
+
+    // Initialize
+    (async function init() {
+      if (token) {
+        try {
+          await loadConfig();
+
+          // Check if redirected back from Todoist OAuth
+          const urlParams = new URLSearchParams(window.location.search);
+          if (urlParams.get('todoist_connected') === 'true') {
+            // Clean URL
+            window.history.replaceState({}, '', '/dashboard');
+            // Show project selection
+            await showProjectSelection();
+          } else if (urlParams.get('error')) {
+            toast('Authentication error: ' + urlParams.get('error'), 'error');
+            window.history.replaceState({}, '', '/dashboard');
+          }
+
+          renderDashboard();
+        } catch (error) {
+          // Token expired
+          handleLogout();
+        }
+      } else {
+        renderLanding();
+      }
+    })();
+  </script>
+</body>
+</html>
