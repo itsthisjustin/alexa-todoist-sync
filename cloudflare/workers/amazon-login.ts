@@ -121,20 +121,73 @@ export async function loginToAmazon(
     ]);
 
     // Check if we're still on login page (failed login)
-    const url = page.url();
+    let url = page.url();
+    console.log(`Current URL after login: ${url}`);
+
+    // Check for account picker (multiple Amazon accounts)
+    if (url.includes('/ap/signin') && url.includes('switch_account=picker')) {
+      console.log('Account picker detected - selecting first account');
+
+      // Try to click the first account option
+      const accountSelectors = [
+        '.cvf-account-switcher-card:first-child',
+        'div[data-testid="account-list-item"]:first-child',
+        '.cvf-account-switcher-claim:first-child',
+        'button[name="switchAccount"]:first-child',
+      ];
+
+      let accountSelected = false;
+      for (const selector of accountSelectors) {
+        try {
+          await page.waitForSelector(selector, { timeout: 3000 });
+          await page.click(selector);
+          accountSelected = true;
+          console.log(`Clicked account using selector: ${selector}`);
+          break;
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!accountSelected) {
+        throw new Error('Could not select account from account picker');
+      }
+
+      // Wait for navigation after account selection
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+        new Promise(resolve => setTimeout(resolve, 5000)),
+      ]);
+
+      url = page.url();
+      console.log(`URL after account selection: ${url}`);
+    }
+
     if (url.includes('/ap/signin') || url.includes('auth-error')) {
       // Check for error message
       const errorElement = await page.$('.a-alert-error, .auth-error-message');
       if (errorElement) {
         const errorText = await page.evaluate(el => el.textContent, errorElement);
+        console.log(`Amazon error message: ${errorText}`);
         throw new Error(`Amazon login failed: ${errorText}`);
       }
+
+      // Check for any visible text that might indicate the issue
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      console.log(`Page content preview: ${bodyText.substring(0, 500)}`);
+
       throw new Error('Amazon login failed - check credentials');
     }
 
     // Check for 2FA page
     if (url.includes('ap/mfa') || url.includes('ap/cvf')) {
-      console.log('2FA detected');
+      console.log('2FA/Verification detected');
+
+      // Capture what type of verification Amazon is asking for
+      const pageTitle = await page.evaluate(() => document.title);
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      console.log(`Page title: ${pageTitle}`);
+      console.log(`Page content (first 1000 chars): ${bodyText.substring(0, 1000)}`);
 
       // Check the "remember device" checkbox if it exists
       const rememberDeviceCheckbox = await page.$('#auth-mfa-remember-device');
