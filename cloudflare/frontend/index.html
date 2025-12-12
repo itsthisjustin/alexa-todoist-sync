@@ -227,8 +227,8 @@ welcome.</pre>
                       occurred at ${new Date(config.lastSyncErrorTime).toLocaleString()}
                     </p>
                     ${config.lastSyncError.includes('Amazon session expired') ? `
-                      <button onclick="handleAmazonReconnect()" class="mt-3 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 text-sm font-mono">
-                        reconnect amazon account
+                      <button onclick="handleAmazonReconnect()" class="mt-3 bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 text-sm font-mono">
+                        ⬇ scroll to reconnect form below
                       </button>
                     ` : ''}
                   </div>
@@ -307,7 +307,7 @@ welcome.</pre>
                 <div class="mb-4">
                   <h2 class="text-lg font-mono font-bold">amazon alexa</h2>
                 </div>
-                ${hasAmazon ? `
+                ${hasAmazon && !config?.lastSyncError?.includes('Amazon session expired') ? `
                   <div class="p-4 bg-green-50 border border-green-200 rounded-lg mb-3">
                     <p class="text-sm text-green-800 font-mono">✓ session active</p>
                     <p class="text-xs text-green-700 mt-1 font-mono">your alexa shopping list is syncing</p>
@@ -315,6 +315,29 @@ welcome.</pre>
                   <button onclick="handleAmazonDisconnect()" class="text-sm text-gray-600 hover:text-gray-900 font-mono">
                     reconnect amazon
                   </button>
+                ` : hasAmazon && config?.lastSyncError?.includes('Amazon session expired') ? `
+                  <div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg mb-4">
+                    <p class="text-sm text-yellow-800 font-mono font-bold">⚠️ session expired - 2fa needed</p>
+                    <p class="text-xs text-yellow-700 mt-1 font-mono">amazon requires re-authentication. enter your credentials and 2fa code below.</p>
+                  </div>
+                  <form onsubmit="handleAmazonLogin(event)" class="space-y-3">
+                    <input type="email" id="amazon-email" placeholder="amazon email" required
+                      class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
+                    <input type="password" id="amazon-password" placeholder="amazon password" required
+                      class="w-full px-4 py-2 border rounded-lg font-mono text-sm">
+                    <div id="amazon-2fa-container">
+                      <input type="text" id="amazon-2fa-code" placeholder="paste 2fa code here"
+                        class="w-full px-4 py-2 border rounded-lg font-mono text-sm" maxlength="6">
+                      <p class="text-xs text-gray-600 mt-1 font-mono">paste the 6-digit code from sms/authenticator</p>
+                    </div>
+                    <div id="amazon-error" class="text-red-600 text-sm hidden font-mono"></div>
+                    <div id="amazon-loading" class="text-gray-600 hidden">
+                      <p class="font-mono">logging in to amazon... this may take 30-60 seconds.</p>
+                    </div>
+                    <button type="submit" id="amazon-submit-btn" class="w-full bg-yellow-600 text-white py-3 rounded-lg hover:bg-yellow-700 font-mono">
+                      reconnect with 2fa
+                    </button>
+                  </form>
                 ` : `
                   <p class="text-sm text-gray-600 mb-4 font-mono">
                     we'll log into amazon with puppeteer and save your session cookies. <strong>passwords aren't stored</strong> - just encrypted cookies. yes this is kinda sketchy to do with your amazon account. i don't want your login, i promise. you can run this yourself if you don't trust me. also if you have a passkey enabled i haven't figured out how to bypass that annoying popup yet.
@@ -499,8 +522,19 @@ welcome.</pre>
       }
     };
 
-    // Alias for reconnecting Amazon from error banner
-    window.handleAmazonReconnect = window.handleAmazonDisconnect;
+    // Scroll to Amazon section for reconnection
+    window.handleAmazonReconnect = () => {
+      // Scroll to Amazon section
+      const amazonSection = document.querySelector('.bg-white.border.border-gray-200.rounded.p-6');
+      if (amazonSection) {
+        amazonSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Focus on email input after a short delay
+        setTimeout(() => {
+          const emailInput = document.getElementById('amazon-email');
+          if (emailInput) emailInput.focus();
+        }, 500);
+      }
+    };
 
     window.handleDeleteAccount = async () => {
       const confirmed = confirm('⚠️ WARNING: This will permanently delete your configuration here and all data. This cannot be undone.\n\nAre you absolutely sure you want to delete?');

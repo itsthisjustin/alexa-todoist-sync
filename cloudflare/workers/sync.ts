@@ -31,9 +31,19 @@ async function scrapeAmazonShoppingList(
       timeout: 60000,
     });
 
-    // Check if redirected to login (session expired)
+    // Check if redirected to login/verification (session expired or requires verification)
     const url = page.url();
-    if (url.includes('/ap/signin') || url.includes('/ap/')) {
+    console.log(`Sync - navigated to URL: ${url}`);
+
+    // Check for any authentication/verification page
+    if (url.includes('/ap/signin') ||
+        url.includes('/ap/cvf') ||  // Customer Verification Flow (CAPTCHA)
+        url.includes('/ap/mfa') ||  // Multi-Factor Authentication
+        url.includes('/ap/challenge') ||
+        url.includes('/ap/verify') ||
+        !url.includes('alexaShoppingList')) {  // Not on the shopping list page at all
+
+      console.log(`Session requires verification - URL: ${url}`);
       throw new Error('Amazon session expired - please reconnect your Amazon account');
     }
 
@@ -204,9 +214,19 @@ export async function markMultipleItemsCompleteOnAlexa(
       timeout: 60000,
     });
 
-    // Check if redirected to login (session expired)
+    // Check if redirected to login/verification (session expired or requires verification)
     const url = page.url();
-    if (url.includes('/ap/signin') || url.includes('/ap/')) {
+    console.log(`Sync - navigated to URL: ${url}`);
+
+    // Check for any authentication/verification page
+    if (url.includes('/ap/signin') ||
+        url.includes('/ap/cvf') ||  // Customer Verification Flow (CAPTCHA)
+        url.includes('/ap/mfa') ||  // Multi-Factor Authentication
+        url.includes('/ap/challenge') ||
+        url.includes('/ap/verify') ||
+        !url.includes('alexaShoppingList')) {  // Not on the shopping list page at all
+
+      console.log(`Session requires verification - URL: ${url}`);
       throw new Error('Amazon session expired - please reconnect your Amazon account');
     }
 
@@ -361,12 +381,39 @@ export async function performSync(
   // Amazon refreshes cookies on each request, so we need to save them back
   if (config.amazonSession && refreshedCookies.length > 0) {
     console.log('Updating stored cookies with refreshed session');
-    config.amazonSession.cookies = refreshedCookies;
+
+    // Log cookie expiration comparison
+    const oldSessionCookies = amazonSession.cookies.filter(c =>
+      c.name.includes('session') || c.name.includes('ubid') || c.name.includes('x-main') || c.name.includes('at-main')
+    );
+    const newSessionCookies = refreshedCookies.filter(c =>
+      c.name.includes('session') || c.name.includes('ubid') || c.name.includes('x-main') || c.name.includes('at-main')
+    );
+
+    console.log('Old session cookies expiry:', oldSessionCookies.map(c => ({
+      name: c.name,
+      expires: c.expires ? new Date(c.expires * 1000).toISOString() : 'none'
+    })));
+    console.log('New session cookies expiry:', newSessionCookies.map(c => ({
+      name: c.name,
+      expires: c.expires ? new Date(c.expires * 1000).toISOString() : 'none'
+    })));
+
+    // Apply same expiry fix as initial login (extend session cookies to 1 year)
+    const oneYearFromNow = Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
+    const fixedRefreshedCookies = refreshedCookies.map(cookie => {
+      if (!cookie.expires || cookie.expires === -1) {
+        return { ...cookie, expires: oneYearFromNow };
+      }
+      return cookie;
+    });
+
+    config.amazonSession.cookies = fixedRefreshedCookies;
     config.amazonSession.encryptedAt = new Date().toISOString();
 
     // Re-encrypt and store updated session
     const updatedSession = {
-      cookies: refreshedCookies,
+      cookies: fixedRefreshedCookies,
       encryptedAt: new Date().toISOString(),
     };
     const encrypted = await encrypt(JSON.stringify(updatedSession), env.ENCRYPTION_KEY);
