@@ -12,32 +12,19 @@
 
 This project supports multiple deployment options. Choose the one that fits your needs:
 
-### ⚡ Cloudflare Workers ⭐ **RECOMMENDED**
-Serverless, fully-managed solution with Todoist OAuth webhooks for instant syncing.
-
-**Best for:** Anyone who wants a fully-automated, maintenance-free solution
-
-**Features:**
-- ✅ **Near-instant sync** via Todoist webhooks (queued with intelligent batching)
-- ✅ **No server required** - runs entirely on Cloudflare
-- ✅ **Todoist OAuth** - secure token-based authentication
-- ✅ **Stripe integration** - optional paid tiers
-- ✅ **Scalable** - handles thousands of users automatically
-- ✅ **Always on** - 24/7 operation with zero maintenance
-- ✅ **Efficient batching** - multiple completions processed in one browser session
-
-**Note:** Cloudflare deployment documentation is available in the `cloudflare/` directory. Check the code and configuration files for setup instructions.
-
----
-
-### 📱 macOS ✅ **TESTED**
+### 📱 macOS ⭐ **RECOMMENDED**
 Run locally on your Mac with LaunchDaemon for automatic syncing.
 
 **Status:** Tested and works great! Requires an always-on Mac to function.
 
-**Best for:** Mac users who want a simple, local solution and have a Mac that's always running
+**Best for:** Mac users who want a simple, reliable local solution and have a Mac that's always running
 
-**Note:** Uses polling (checks Todoist every 24 hours by default) instead of webhooks.
+**Features:**
+- ✅ **Persistent browser session** - stays logged in to Amazon
+- ✅ **Reliable** - no ephemeral browser issues
+- ✅ **Automatic syncing** - runs as a LaunchDaemon
+- ✅ **2FA/Passkey support** - authenticate once and stay logged in
+- ✅ **Bidirectional sync** - Alexa ↔ Todoist
 
 **Installation:**
 ```bash
@@ -45,6 +32,39 @@ cd mac
 ./install.sh
 ```
 The script will install dependencies, help configure credentials, and set up a LaunchDaemon for automatic syncing.
+
+**Important for 2FA/Passkey users:**
+If you have two-factor authentication or passkeys enabled on your Amazon account:
+1. Set `"headless": false` in `config.json`
+2. Run `node shared/sync.js` to log in and complete 2FA/passkey authentication
+3. Stop the sync (Ctrl+C)
+4. Set `"headless": true` in `config.json`
+5. Start the LaunchDaemon - it will now use the saved session cookies
+
+---
+
+### ⚡ Cloudflare Workers ⚠️ **WORKS BUT NOT RECOMMENDED**
+Serverless solution with Todoist OAuth webhooks for instant syncing.
+
+**Status:** Works, but has reliability issues due to Amazon's security measures
+
+**Best for:** Testing or experimentation only
+
+**⚠️ Known Issues:**
+- Amazon frequently logs you out due to ephemeral browser instances
+- Requires frequent re-authentication (every few days or even daily)
+- Can be annoying to maintain
+- **We strongly recommend using the local Mac deployment instead**
+
+**Features:**
+- ✅ **Near-instant sync** via Todoist webhooks (queued with intelligent batching)
+- ✅ **No server required** - runs entirely on Cloudflare
+- ✅ **Todoist OAuth** - secure token-based authentication
+- ✅ **Stripe integration** - optional paid tiers
+- ✅ **Scalable** - handles thousands of users automatically
+- ❌ **Unreliable Amazon sessions** - frequent logouts required
+
+**Note:** Cloudflare deployment documentation is available in the `cloudflare/` directory. Check the code and configuration files for setup instructions.
 
 ---
 
@@ -99,9 +119,31 @@ Supports Ubuntu, Debian, Amazon Linux, RHEL, and CentOS. The script will install
 
 ## 🚀 Quick Start
 
-### Cloudflare (Recommended)
+### macOS (Recommended)
 
-The easiest way to get started is with the Cloudflare Workers deployment:
+The most reliable way to get started is with the macOS local deployment:
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/itsthisjustin/alexa-todoist-sync.git
+   cd alexa-todoist-sync/mac
+   ```
+
+2. **Run the installer**
+   ```bash
+   ./install.sh
+   ```
+
+3. **Configure for 2FA/Passkeys** (if applicable)
+   - If you have 2FA or passkeys enabled, set `"headless": false` in `config.json`
+   - Run `node shared/sync.js` to log in
+   - After successful login, stop the sync (Ctrl+C)
+   - Set `"headless": true` in `config.json`
+   - The LaunchDaemon will now run headless using saved cookies
+
+### Cloudflare (Not Recommended)
+
+While the Cloudflare deployment works, it's not recommended due to frequent Amazon logouts. If you still want to try it:
 
 1. **Install Wrangler CLI**
    ```bash

@@ -74,11 +74,10 @@ async function navigateAndLogin(page) {
     try {
       // Wait for email field - try multiple selectors
       const emailSelectors = [
-        '#ap_email_login',
         '#ap_email',
+        '#ap_email_login',
         'input[type="email"]',
-        'input[name="email"]',
-        'input[autocomplete="username"]'
+        'input[name="email"]'
       ];
 
       let emailInput = null;
@@ -97,14 +96,14 @@ async function navigateAndLogin(page) {
         throw new Error('Could not find email input field');
       }
 
-      await page.type(emailInput, config.amazon.email);
+      await page.type(emailInput, config.amazon.email, { delay: 50 });
 
       // Click continue button - try multiple selectors
       const continueSelectors = [
         '#continue',
+        'input#continue',
         'input[type="submit"]',
-        'button[type="submit"]',
-        'input.a-button-input'
+        '#ap_email_login_continue_id'
       ];
 
       let clicked = false;
@@ -124,12 +123,10 @@ async function navigateAndLogin(page) {
       }
 
       // Wait for password page to load
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {
-        log('Password might be on same page');
-      });
-
-      // Wait a moment for page to fully load
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
+        new Promise(resolve => setTimeout(resolve, 3000))
+      ]);
 
       // Wait for password field - try multiple selectors
       const passwordSelectors = [
@@ -151,17 +148,19 @@ async function navigateAndLogin(page) {
       }
 
       if (!passwordInput) {
+        // Take a screenshot for debugging
+        await page.screenshot({ path: path.join(__dirname, 'logs/password-page.png') }).catch(() => {});
         throw new Error('Could not find password input field');
       }
 
-      await page.type(passwordInput, config.amazon.password);
+      await page.type(passwordInput, config.amazon.password, { delay: 50 });
 
       // Click sign in button - try multiple selectors
       const submitSelectors = [
         '#signInSubmit',
+        'input#signInSubmit',
         'input[type="submit"]',
-        'button[type="submit"]',
-        'input.a-button-input'
+        '#auth-signin-button'
       ];
 
       clicked = false;
@@ -181,9 +180,10 @@ async function navigateAndLogin(page) {
       }
 
       // Wait for navigation after login
-      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {
-        log('Navigation timeout - might require 2FA or CAPTCHA', '⚠️');
-      });
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+        new Promise(resolve => setTimeout(resolve, 5000))
+      ]);
 
       // Check if we need 2FA
       const finalUrl = page.url();
@@ -192,12 +192,17 @@ async function navigateAndLogin(page) {
       if (finalUrl.includes('ap/mfa') || finalUrl.includes('ap/cvf') || finalUrl.includes('verification')) {
         log('Two-factor authentication or verification required!', '🔐');
         log('Please complete the verification in the browser window.');
-        log('The script will wait for you to complete authentication...');
 
-        // Wait up to 5 minutes for user to complete 2FA
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 300000 }).catch(() => {
-          throw new Error('Authentication timeout - please try again');
-        });
+        if (config.options.headless) {
+          log('Running in headless mode - cannot complete 2FA automatically', '❌');
+          throw new Error('2FA required but running in headless mode');
+        } else {
+          log('Browser window is open - waiting for you to complete authentication...');
+          // Wait indefinitely when not headless (user can see the browser)
+          await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 0 }).catch(() => {
+            throw new Error('Authentication failed');
+          });
+        }
       }
 
       // Navigate to shopping list after successful login
@@ -529,43 +534,13 @@ async function markItemsCompleteOnAlexa(page, itemsToComplete, state) {
   return state;
 }
 
-// Main function
-async function main() {
-  log('Starting Alexa to Todoist sync...', '🚀');
-
-  if (DRY_RUN) {
-    log('Running in DRY RUN mode - no items will be synced', '🔍');
-  }
-
-  // Validate configuration
-  if (!config.amazon.email || !config.amazon.password) {
-    log('Amazon credentials not configured. Please update config.json', '❌');
-    process.exit(1);
-  }
-
-  if (!config.todoist.apiToken || !config.todoist.projectId) {
-    log('Todoist credentials not configured. Please update config.json', '❌');
-    process.exit(1);
-  }
-
-  let browser;
+// Perform one sync cycle
+async function performSync(browser, state) {
+  let page;
   try {
-    // Load previous state
-    let state = await loadState();
-
-    // Launch browser
-    log('Launching browser...');
-    browser = await puppeteer.launch({
-      headless: config.options.headless ? 'new' : false,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-blink-features=AutomationControlled'
-      ]
-    });
-
-    const page = await browser.newPage();
+    // Create a fresh page for this sync cycle
+    log('Creating new page for sync cycle...');
+    page = await browser.newPage();
 
     // Set a realistic user agent
     await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -577,8 +552,21 @@ async function main() {
       log('Loaded saved cookies', '🍪');
     }
 
-    // Navigate to shopping list and login if needed
-    await navigateAndLogin(page);
+    // Navigate to shopping list (will use existing session)
+    await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+      waitUntil: 'networkidle2',
+      timeout: 60000
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const currentUrl = page.url();
+
+    // Check if we got logged out
+    if (currentUrl.includes('signin') || currentUrl.includes('/ap/')) {
+      log('Session expired, need to re-login', '⚠️');
+      await navigateAndLogin(page);
+    }
 
     // Extract items from Alexa
     const items = await extractItems(page);
@@ -610,17 +598,103 @@ async function main() {
     }
 
     log('Sync completed successfully!', '✅');
-
+    return state;
   } catch (error) {
-    log(`Error: ${error.message}`, '❌');
+    log(`Sync error: ${error.message}`, '❌');
     console.error(error);
-    process.exit(1);
+    return state;
   } finally {
-    if (browser) {
-      await browser.close();
+    // Always close the page after sync
+    if (page) {
+      await page.close();
+      log('Page closed', '🔒');
     }
   }
 }
+
+// Main function - keeps browser open and syncs on interval
+async function main() {
+  log('Starting Alexa to Todoist sync service...', '🚀');
+
+  if (DRY_RUN) {
+    log('Running in DRY RUN mode - no items will be synced', '🔍');
+  }
+
+  // Validate configuration
+  if (!config.amazon.email || !config.amazon.password) {
+    log('Amazon credentials not configured. Please update config.json', '❌');
+    process.exit(1);
+  }
+
+  if (!config.todoist.apiToken || !config.todoist.projectId) {
+    log('Todoist credentials not configured. Please update config.json', '❌');
+    process.exit(1);
+  }
+
+  let browser;
+  let state;
+
+  try {
+    // Load previous state
+    state = await loadState();
+
+    // Launch browser ONCE and keep it open
+    log('Launching persistent browser session...');
+    browser = await puppeteer.launch({
+      headless: config.options.headless ? 'new' : false,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled'
+      ]
+    });
+
+    // Perform initial sync
+    log('Performing initial sync...');
+    state = await performSync(browser, state);
+
+    // Set up interval for ongoing syncs
+    const intervalMinutes = config.options.checkIntervalMinutes || 5;
+    log(`Will sync every ${intervalMinutes} minutes`, '⏱️');
+
+    setInterval(async () => {
+      log('Starting scheduled sync...', '🔄');
+      state = await performSync(browser, state);
+    }, intervalMinutes * 60 * 1000);
+
+    // Keep process alive
+    log('Service running. Press Ctrl+C to stop.', '✅');
+
+  } catch (error) {
+    log(`Fatal error: ${error.message}`, '❌');
+    console.error(error);
+
+    // If not headless, keep browser open so user can manually fix the issue
+    if (!config.options.headless) {
+      log('Browser window left open - you can manually login and then restart the script', '⚠️');
+      log('Press Ctrl+C to exit when ready');
+      // Keep process alive
+      await new Promise(() => {});
+    } else {
+      if (browser) {
+        await browser.close();
+      }
+      process.exit(1);
+    }
+  }
+}
+
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  log('Shutting down gracefully...', '👋');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  log('Shutting down gracefully...', '👋');
+  process.exit(0);
+});
 
 // Run main function
 main();
