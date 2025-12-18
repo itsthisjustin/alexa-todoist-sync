@@ -13,6 +13,7 @@ node_modules/
 config.json
 cookies.json
 sync-state.json
+.browser-profile/
 
 # Wrangler configuration (contains account-specific IDs)
 wrangler.toml

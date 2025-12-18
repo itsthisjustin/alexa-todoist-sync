@@ -33,13 +33,40 @@ cd mac
 ```
 The script will install dependencies, help configure credentials, and set up a LaunchDaemon for automatic syncing.
 
-**Important for 2FA/Passkey users:**
-If you have two-factor authentication or passkeys enabled on your Amazon account:
-1. Set `"headless": false` in `config.json`
-2. Run `node shared/sync.js` to log in and complete 2FA/passkey authentication
-3. Stop the sync (Ctrl+C)
-4. Set `"headless": true` in `config.json`
-5. Start the LaunchDaemon - it will now use the saved session cookies
+**First-Time Setup (Required for all users):**
+
+The sync uses a **persistent browser profile** that saves your Amazon login session. You must log in once manually before running headless:
+
+1. **Configure for manual login:**
+   ```bash
+   # Edit shared/config.json and set:
+   "headless": false
+   ```
+
+2. **Run the sync script:**
+   ```bash
+   node shared/sync.js
+   ```
+   - A browser window will open and navigate to Amazon
+   - Log in manually (complete 2FA/passkey if prompted)
+   - Wait for "Shopping list page detected!" message in the terminal
+
+3. **Stop the script:**
+   - Press `Ctrl+C` to stop
+
+4. **Switch to headless mode:**
+   ```bash
+   # Edit shared/config.json and set:
+   "headless": true
+   ```
+
+5. **Start the LaunchDaemon:**
+   ```bash
+   launchctl load ~/Library/LaunchAgents/com.alexassync.plist
+   ```
+   - The service will now run automatically in the background using your saved session
+
+**Why this works:** When `headless: false`, the script opens a visible browser and waits for you to log in manually - it won't try to automate the login. Your session is saved to a `.browser-profile/` directory, which persists across restarts. Subsequent runs (even headless) will use this saved session.
 
 ---
 
@@ -111,7 +138,7 @@ Supports Ubuntu, Debian, Amazon Linux, RHEL, and CentOS. The script will install
   - Todoist → Alexa (Cloudflare): Completed tasks marked complete via webhooks (within 30 seconds)
   - Todoist → Alexa (macOS/Windows/Cloud): Completed tasks marked complete (configurable, default: every 24 hours)
 - 🔄 **Smart tracking**: Re-add completed items and they'll sync again (uses `completedOnAlexa` flag)
-- 🍪 **Persistent sessions**: Maintains login with saved cookies
+- 🍪 **Persistent browser profile**: Maintains login with a saved browser profile (not just cookies) for reliable long-term sessions
 - 🔐 **2FA support**: Works with Amazon's two-factor authentication
 - 📊 **Detailed logging**: Timestamps and status for every operation
 - 🧪 **Dry-run mode**: Test without actually syncing (macOS/Windows/Cloud only)
@@ -134,12 +161,23 @@ The most reliable way to get started is with the macOS local deployment:
    ./install.sh
    ```
 
-3. **Configure for 2FA/Passkeys** (if applicable)
-   - If you have 2FA or passkeys enabled, set `"headless": false` in `config.json`
-   - Run `node shared/sync.js` to log in
-   - After successful login, stop the sync (Ctrl+C)
-   - Set `"headless": true` in `config.json`
-   - The LaunchDaemon will now run headless using saved cookies
+3. **Log in manually (one-time setup)**
+   ```bash
+   # Make sure headless is false in shared/config.json, then:
+   node shared/sync.js
+   ```
+   - A browser window opens - log in to Amazon manually
+   - Complete any 2FA/passkey prompts
+   - Wait for "Shopping list page detected!" in terminal
+   - Press `Ctrl+C` to stop
+
+4. **Switch to headless and start the service**
+   ```bash
+   # Set "headless": true in shared/config.json, then:
+   launchctl load ~/Library/LaunchAgents/com.alexassync.plist
+   ```
+
+The service now runs automatically in the background using your saved browser session.
 
 ### Cloudflare (Not Recommended)
 
@@ -336,20 +374,32 @@ Get-Content logs\sync.log -Wait -Tail 50
 
 - Your credentials are stored locally in `config.json`
 - Session cookies are stored locally in `cookies.json`
-- Neither file should be committed to version control
+- Browser profile data is stored in `.browser-profile/` (contains your Amazon session)
+- None of these files should be committed to version control
 - The `.gitignore` file protects against accidental commits
 - Consider using a dedicated Todoist project for this sync
 
-**Important:** Never share your `config.json` or `cookies.json` files.
+**Important:** Never share your `config.json`, `cookies.json`, or `.browser-profile/` directory.
 
 ## 🐛 Troubleshooting
 
 ### "Login required" every time
 
-Your cookies might be expiring:
-1. Delete `cookies.json`
-2. Run the sync script to login fresh
-3. Check if Amazon is requiring additional verification
+Your session might have expired. Re-authenticate manually:
+1. Set `"headless": false` in `config.json`
+2. Run `node shared/sync.js`
+3. Log in manually in the browser window
+4. Wait for "Shopping list page detected!" message
+5. Press `Ctrl+C` to stop
+6. Set `"headless": true` in `config.json`
+7. Restart the service
+
+If issues persist, try deleting the browser profile to start fresh:
+```bash
+rm -rf shared/.browser-profile
+rm shared/cookies.json
+```
+Then repeat the manual login steps above.
 
 ### Items not syncing
 

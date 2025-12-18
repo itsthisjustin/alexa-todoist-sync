@@ -538,21 +538,10 @@ async function markItemsCompleteOnAlexa(page, itemsToComplete, state) {
 async function performSync(browser, state) {
   let page;
   try {
-    // Create a fresh page for this sync cycle
-    log('Creating new page for sync cycle...');
+    // Create a new page for this sync cycle (browser profile persists)
     page = await browser.newPage();
 
-    // Set a realistic user agent
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-    // Load saved cookies if they exist
-    const cookies = await loadCookies();
-    if (cookies) {
-      await page.setCookie(...cookies);
-      log('Loaded saved cookies', '🍪');
-    }
-
-    // Navigate to shopping list (will use existing session)
+    // Navigate to shopping list (will use existing session from persistent profile)
     await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
       waitUntil: 'networkidle2',
       timeout: 60000
@@ -604,10 +593,9 @@ async function performSync(browser, state) {
     console.error(error);
     return state;
   } finally {
-    // Always close the page after sync
+    // Close the page after sync (browser and profile stay open)
     if (page) {
-      await page.close();
-      log('Page closed', '🔒');
+      await page.close().catch(e => log(`Error closing page: ${e.message}`, '⚠️'));
     }
   }
 }
@@ -638,10 +626,12 @@ async function main() {
     // Load previous state
     state = await loadState();
 
-    // Launch browser ONCE and keep it open
+    // Launch browser ONCE and keep it open with persistent profile
     log('Launching persistent browser session...');
+    const userDataDir = path.join(__dirname, '.browser-profile');
     browser = await puppeteer.launch({
       headless: config.options.headless ? 'new' : false,
+      userDataDir: userDataDir,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -649,6 +639,46 @@ async function main() {
         '--disable-blink-features=AutomationControlled'
       ]
     });
+
+    // In non-headless mode, let user manually login first
+    if (!config.options.headless) {
+      const page = await browser.newPage();
+
+      // Set a realistic user agent
+      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+      // Load saved cookies if they exist
+      const cookies = await loadCookies();
+      if (cookies) {
+        await page.setCookie(...cookies);
+        log('Loaded saved cookies', '🍪');
+      }
+
+      log('Non-headless mode - navigating to Amazon...');
+      await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+        waitUntil: 'networkidle2',
+        timeout: 60000
+      });
+
+      const currentUrl = page.url();
+      if (currentUrl.includes('signin') || currentUrl.includes('/ap/')) {
+        log('Please log in manually in the browser window...', '🔐');
+        log('Waiting for you to reach the shopping list page...');
+        // Wait for shopping list to be visible (no timeout - wait indefinitely)
+        await page.waitForSelector('.item-body, .shopping-list-container, #shopping-list', { timeout: 0 });
+        log('Shopping list page detected!', '✅');
+
+        // Save cookies after manual login
+        const newCookies = await page.cookies();
+        await saveCookies(newCookies);
+        log('Cookies saved after manual login', '🍪');
+      } else {
+        log('Already logged in', '✅');
+      }
+
+      // Close the initial login page
+      await page.close();
+    }
 
     // Perform initial sync
     log('Performing initial sync...');
