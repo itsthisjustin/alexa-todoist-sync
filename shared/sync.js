@@ -534,18 +534,12 @@ async function markItemsCompleteOnAlexa(page, itemsToComplete, state) {
   return state;
 }
 
-// Perform one sync cycle
-async function performSync(browser, state) {
-  let page;
+// Perform one sync cycle - reuses the same page to preserve sessionStorage/localStorage
+async function performSync(page, state) {
   try {
-    // Create a new page for this sync cycle (browser profile persists)
-    page = await browser.newPage();
-
-    // Navigate to shopping list (will use existing session from persistent profile)
-    await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
+    // Reload the page to get fresh data (keeps same tab to preserve session data)
+    log('Refreshing shopping list page...');
+    await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
 
     await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -592,12 +586,8 @@ async function performSync(browser, state) {
     log(`Sync error: ${error.message}`, '❌');
     console.error(error);
     return state;
-  } finally {
-    // Close the page after sync (browser and profile stay open)
-    if (page) {
-      await page.close().catch(e => log(`Error closing page: ${e.message}`, '⚠️'));
-    }
   }
+  // Note: We no longer close the page - it stays open to preserve session data
 }
 
 // Main function - keeps browser open and syncs on interval
@@ -640,28 +630,29 @@ async function main() {
       ]
     });
 
-    // In non-headless mode, let user manually login first
-    if (!config.options.headless) {
-      const page = await browser.newPage();
+    // Create a single persistent page - this preserves sessionStorage/localStorage
+    log('Creating persistent page (will keep same tab to preserve session data)...');
+    const page = await browser.newPage();
 
-      // Set a realistic user agent
-      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    // Set a realistic user agent
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
-      // Load saved cookies if they exist
-      const cookies = await loadCookies();
-      if (cookies) {
-        await page.setCookie(...cookies);
-        log('Loaded saved cookies', '🍪');
-      }
+    // Load saved cookies if they exist
+    const cookies = await loadCookies();
+    if (cookies) {
+      await page.setCookie(...cookies);
+      log('Loaded saved cookies', '🍪');
+    }
 
-      log('Non-headless mode - navigating to Amazon...');
-      await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
-        waitUntil: 'networkidle2',
-        timeout: 60000
-      });
+    log('Navigating to Amazon shopping list...');
+    await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+      waitUntil: 'networkidle2',
+      timeout: 60000
+    });
 
-      const currentUrl = page.url();
-      if (currentUrl.includes('signin') || currentUrl.includes('/ap/')) {
+    const currentUrl = page.url();
+    if (currentUrl.includes('signin') || currentUrl.includes('/ap/')) {
+      if (!config.options.headless) {
         log('Please log in manually in the browser window...', '🔐');
         log('Waiting for you to reach the shopping list page...');
         // Wait for shopping list to be visible (no timeout - wait indefinitely)
@@ -673,16 +664,32 @@ async function main() {
         await saveCookies(newCookies);
         log('Cookies saved after manual login', '🍪');
       } else {
-        log('Already logged in', '✅');
+        // Headless mode - try automatic login
+        await navigateAndLogin(page);
       }
-
-      // Close the initial login page
-      await page.close();
+    } else {
+      log('Already logged in', '✅');
     }
 
-    // Perform initial sync
+    // Note: We keep the same page open - don't close it!
+    // This preserves sessionStorage, localStorage, and other session data
+
+    // Perform initial sync (extract items from current page state)
     log('Performing initial sync...');
-    state = await performSync(browser, state);
+    const items = await extractItems(page);
+    state = await syncToTodoist(items, state);
+
+    // Check Todoist completions if needed
+    if (shouldCheckTodoistCompletions(state)) {
+      const completedInTodoist = await getCompletedTodoistTasks(state);
+      state = await markItemsCompleteOnAlexa(page, completedInTodoist, state);
+      state.lastTodoistCheck = new Date().toISOString();
+    }
+
+    if (!DRY_RUN) {
+      await saveState(state);
+    }
+    log('Initial sync completed!', '✅');
 
     // Set up interval for ongoing syncs
     const intervalMinutes = config.options.checkIntervalMinutes || 5;
@@ -690,7 +697,7 @@ async function main() {
 
     setInterval(async () => {
       log('Starting scheduled sync...', '🔄');
-      state = await performSync(browser, state);
+      state = await performSync(page, state);
     }, intervalMinutes * 60 * 1000);
 
     // Keep process alive
