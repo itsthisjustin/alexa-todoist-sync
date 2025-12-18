@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
 const fs = require('fs').promises;
 const path = require('path');
 
@@ -74,10 +76,11 @@ async function navigateAndLogin(page) {
     try {
       // Wait for email field - try multiple selectors
       const emailSelectors = [
-        '#ap_email',
         '#ap_email_login',
+        '#ap_email',
         'input[type="email"]',
-        'input[name="email"]'
+        'input[name="email"]',
+        'input[autocomplete="username"]'
       ];
 
       let emailInput = null;
@@ -96,14 +99,14 @@ async function navigateAndLogin(page) {
         throw new Error('Could not find email input field');
       }
 
-      await page.type(emailInput, config.amazon.email, { delay: 50 });
+      await page.type(emailInput, config.amazon.email);
 
       // Click continue button - try multiple selectors
       const continueSelectors = [
         '#continue',
-        'input#continue',
         'input[type="submit"]',
-        '#ap_email_login_continue_id'
+        'button[type="submit"]',
+        'input.a-button-input'
       ];
 
       let clicked = false;
@@ -123,22 +126,27 @@ async function navigateAndLogin(page) {
       }
 
       // Wait for password page to load
-      await Promise.race([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }),
-        new Promise(resolve => setTimeout(resolve, 3000))
-      ]);
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {
+        log('Password might be on same page');
+      });
+
+      // Wait a moment for page to fully load
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Wait for password field - try multiple selectors
       const passwordSelectors = [
         '#ap_password',
         'input[type="password"]',
-        'input[name="password"]'
+        'input[name="password"]',
+        'input[autocomplete="current-password"]',
+        '#password',
+        '[name="password"]'
       ];
 
       let passwordInput = null;
       for (const selector of passwordSelectors) {
         try {
-          await page.waitForSelector(selector, { timeout: 5000 });
+          await page.waitForSelector(selector, { timeout: 10000 });
           passwordInput = selector;
           log(`Found password field with selector: ${selector}`);
           break;
@@ -153,14 +161,14 @@ async function navigateAndLogin(page) {
         throw new Error('Could not find password input field');
       }
 
-      await page.type(passwordInput, config.amazon.password, { delay: 50 });
+      await page.type(passwordInput, config.amazon.password);
 
       // Click sign in button - try multiple selectors
       const submitSelectors = [
         '#signInSubmit',
-        'input#signInSubmit',
         'input[type="submit"]',
-        '#auth-signin-button'
+        'button[type="submit"]',
+        'input.a-button-input'
       ];
 
       clicked = false;
@@ -180,10 +188,9 @@ async function navigateAndLogin(page) {
       }
 
       // Wait for navigation after login
-      await Promise.race([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
-        new Promise(resolve => setTimeout(resolve, 5000))
-      ]);
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {
+        log('Navigation timeout - might require 2FA or CAPTCHA', '⚠️');
+      });
 
       // Check if we need 2FA
       const finalUrl = page.url();
@@ -192,7 +199,7 @@ async function navigateAndLogin(page) {
       if (finalUrl.includes('ap/mfa') || finalUrl.includes('ap/cvf') || finalUrl.includes('verification')) {
         log('Two-factor authentication or verification required!', '🔐');
         log('Please complete the verification in the browser window.');
-
+        
         if (config.options.headless) {
           log('Running in headless mode - cannot complete 2FA automatically', '❌');
           throw new Error('2FA required but running in headless mode');
@@ -534,17 +541,22 @@ async function markItemsCompleteOnAlexa(page, itemsToComplete, state) {
   return state;
 }
 
-// Perform one sync cycle - reuses the same page to preserve sessionStorage/localStorage
-async function performSync(page, state) {
+// Perform one sync cycle
+async function performSync(browser, page, state) {
   try {
-    // Reload the page to get fresh data (keeps same tab to preserve session data)
-    log('Refreshing shopping list page...');
+    // Reload the existing page to get fresh data
     await page.reload({ waitUntil: 'networkidle2', timeout: 60000 });
+    
+    // Alternative: navigate to shopping list URL
+    // await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+    //  waitUntil: 'networkidle2',
+    //  timeout: 60000
+    // });
 
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const currentUrl = page.url();
-
+    
     // Check if we got logged out
     if (currentUrl.includes('signin') || currentUrl.includes('/ap/')) {
       log('Session expired, need to re-login', '⚠️');
@@ -587,7 +599,6 @@ async function performSync(page, state) {
     console.error(error);
     return state;
   }
-  // Note: We no longer close the page - it stays open to preserve session data
 }
 
 // Main function - keeps browser open and syncs on interval
@@ -610,13 +621,14 @@ async function main() {
   }
 
   let browser;
+  let page;
   let state;
 
   try {
     // Load previous state
     state = await loadState();
 
-    // Launch browser ONCE and keep it open with persistent profile
+    // Launch browser ONCE and keep it open
     log('Launching persistent browser session...');
     const userDataDir = path.join(__dirname, '.browser-profile');
     browser = await puppeteer.launch({
@@ -630,12 +642,14 @@ async function main() {
       ]
     });
 
-    // Create a single persistent page - this preserves sessionStorage/localStorage
-    log('Creating persistent page (will keep same tab to preserve session data)...');
-    const page = await browser.newPage();
+    page = await browser.newPage();
 
-    // Set a realistic user agent
-    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    // Set realistic browser properties to avoid detection
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9'
+    });
 
     // Load saved cookies if they exist
     const cookies = await loadCookies();
@@ -644,60 +658,34 @@ async function main() {
       log('Loaded saved cookies', '🍪');
     }
 
-    log('Navigating to Amazon shopping list...');
-    await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
-      waitUntil: 'networkidle2',
-      timeout: 60000
-    });
-
-    const currentUrl = page.url();
-    if (currentUrl.includes('signin') || currentUrl.includes('/ap/')) {
-      if (!config.options.headless) {
-        log('Please log in manually in the browser window...', '🔐');
-        log('Waiting for you to reach the shopping list page...');
-        // Wait for shopping list to be visible (no timeout - wait indefinitely)
-        await page.waitForSelector('.item-body, .shopping-list-container, #shopping-list', { timeout: 0 });
-        log('Shopping list page detected!', '✅');
-
-        // Save cookies after manual login
-        const newCookies = await page.cookies();
-        await saveCookies(newCookies);
-        log('Cookies saved after manual login', '🍪');
-      } else {
-        // Headless mode - try automatic login
-        await navigateAndLogin(page);
-      }
+    // Navigate to shopping list and login if needed (only auto-login in headless mode)
+    if (config.options.headless) {
+      await navigateAndLogin(page);
     } else {
-      log('Already logged in', '✅');
+      // In non-headless mode, just navigate and let user manually login
+      log('Non-headless mode - navigate to login page manually if needed');
+      await page.goto('https://www.amazon.com/alexaquantum/sp/alexaShoppingList', {
+        waitUntil: 'networkidle2',
+        timeout: 60000
+      });
+      log('Please log in manually in the browser window if needed...');
+      log('Waiting for you to reach the shopping list page...');
+      // Wait for shopping list to be visible
+      await page.waitForSelector('.item-body, .shopping-list-container, #shopping-list', { timeout: 0 });
+      log('Shopping list page detected, continuing...');
     }
 
-    // Note: We keep the same page open - don't close it!
-    // This preserves sessionStorage, localStorage, and other session data
-
-    // Perform initial sync (extract items from current page state)
+    // Perform initial sync
     log('Performing initial sync...');
-    const items = await extractItems(page);
-    state = await syncToTodoist(items, state);
-
-    // Check Todoist completions if needed
-    if (shouldCheckTodoistCompletions(state)) {
-      const completedInTodoist = await getCompletedTodoistTasks(state);
-      state = await markItemsCompleteOnAlexa(page, completedInTodoist, state);
-      state.lastTodoistCheck = new Date().toISOString();
-    }
-
-    if (!DRY_RUN) {
-      await saveState(state);
-    }
-    log('Initial sync completed!', '✅');
+    state = await performSync(browser, page, state);
 
     // Set up interval for ongoing syncs
     const intervalMinutes = config.options.checkIntervalMinutes || 5;
     log(`Will sync every ${intervalMinutes} minutes`, '⏱️');
-
+    
     setInterval(async () => {
       log('Starting scheduled sync...', '🔄');
-      state = await performSync(page, state);
+      state = await performSync(browser, page, state);
     }, intervalMinutes * 60 * 1000);
 
     // Keep process alive
@@ -706,7 +694,7 @@ async function main() {
   } catch (error) {
     log(`Fatal error: ${error.message}`, '❌');
     console.error(error);
-
+    
     // If not headless, keep browser open so user can manually fix the issue
     if (!config.options.headless) {
       log('Browser window left open - you can manually login and then restart the script', '⚠️');
